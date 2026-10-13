@@ -1,0 +1,2 @@
+-keep class com.coorlay.coolray.FakeDimMediaService { *; }
+-keep class com.coorlay.coolray.FakeDimMediaService$* { *; }

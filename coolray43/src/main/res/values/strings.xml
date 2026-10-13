@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name" translatable="false">coorlay</string>
+    <string name="app_version">Version %1$s</string>
+</resources>
