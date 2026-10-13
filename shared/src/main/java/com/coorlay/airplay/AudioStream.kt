@@ -19,11 +19,15 @@ data class AudioFormat(
     val payloadType: Int,
     val audioType: String = "media",
     /**
-     * Rate the stream is decoded and played at. For Opus it is the format's own rate (16, 24 or 48 kHz):
-     * [sampleRate] stays 48 kHz there for the microphone path, but decoding a 16 kHz navigation prompt
-     * to 48 kHz tripled the work on the Coolray CPU and the prompt crackled (0.0.45b-9).
+     * Rate the stream is decoded and played at. [sampleRate] stays 48 kHz for Opus (microphone path), but
+     * decoding a 16 kHz navigation prompt to 48 kHz tripled the work on the Coolray CPU and the prompt
+     * crackled (0.0.45b-9), so 16 kHz Opus decodes at 16 kHz. 24 and 48 kHz Opus decode at 48 kHz: Concentus
+     * turns super-wideband/fullband SILK and hybrid packets into silence or noise at any other output rate
+     * (OpusDecodeRateTest), and Siri over Wi-Fi (0x20000000) was only a squeak at 24 kHz (tester, 2026-10-13).
      */
     val decodeRate: Int = sampleRate,
+    /** The stream's RTP clock, reported in /feedback: Opus counts at 16/24/48 kHz whatever it is decoded at. */
+    val clockRate: Int = decodeRate,
 )
 
 /**
@@ -236,7 +240,9 @@ object AudioStreamCodec {
         val isOpus = (bits and OPUS_MONO) != 0L
         val pcm = PCM_FORMAT[bits]
         return when {
-            isOpus -> AudioFormat(AudioCodecKind.OPUS, 48_000, 1, payloadType, audioType, opusRate(bits))
+            isOpus -> opusRate(bits).let { clock ->
+                AudioFormat(AudioCodecKind.OPUS, 48_000, 1, payloadType, audioType, opusDecodeRate(clock), clock)
+            }
             isAacLc -> AudioFormat(
                 AudioCodecKind.AAC_LC,
                 if ((bits and AAC_LC_48K_STEREO) != 0L) 48_000 else 44_100,
@@ -259,6 +265,9 @@ object AudioStreamCodec {
         bits and 0x10000000L != 0L -> 16_000
         else -> 48_000
     }
+
+    /** Only wideband (16 kHz) Opus decodes correctly below 48 kHz in Concentus; see [AudioFormat.decodeRate]. */
+    fun opusDecodeRate(clockRate: Int): Int = if (clockRate == 16_000) 16_000 else 48_000
 
     private const val AAC_LC_44K_STEREO = 0x400000L
     private const val AAC_LC_48K_STEREO = 0x800000L

@@ -49,8 +49,13 @@ class SoftwareOpusTest {
         assertEquals(AudioCodecKind.OPUS, navigation.codec)
         assertEquals(48_000, navigation.sampleRate)
         assertEquals(16_000, navigation.decodeRate)
-        assertEquals(24_000, AudioStreamCodec.fromFormatBits(0x20000000L, 100, "speechRecognition").decodeRate)
+        assertEquals(16_000, navigation.clockRate)
+        val siri = AudioStreamCodec.fromFormatBits(0x20000000L, 100, "speechRecognition")
+        // Siri is reported on its 24 kHz clock but decoded at 48 kHz (Concentus garbles SWB below 48 kHz).
+        assertEquals(48_000, siri.decodeRate)
+        assertEquals(24_000, siri.clockRate)
         assertEquals(48_000, AudioStreamCodec.fromFormatBits(0x40000000L, 100, "alert").decodeRate)
+        assertEquals(48_000, AudioStreamCodec.fromFormatBits(0x40000000L, 100, "alert").clockRate)
         assertEquals(44_100, AudioStreamCodec.fromFormatBits(0x400000L, 102).decodeRate)
     }
 

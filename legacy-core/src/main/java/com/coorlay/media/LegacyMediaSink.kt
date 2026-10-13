@@ -557,9 +557,14 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
      * the track ran dry on every late packet or slow decode and the navigation voice crackled (0.0.45b-9),
      * so playback waits for [PREBUFFER_MS] of PCM. Music (AAC, audioLatencyMs 1000) started at once and every
      * Wi-Fi gap of 0.4-1.5 s was heard (2026-10-12): it waits for [MUSIC_START_MS], and after the track ran dry
-     * while packets kept coming, for [MUSIC_STEP_MS] more each time, up to [MUSIC_MAX_MS].
+     * while packets kept coming, for [MUSIC_STEP_MS] more each time, up to [MUSIC_MAX_MS]. Siri's 24 kHz Opus
+     * decodes at 48 kHz (see AudioFormat.decodeRate), which costs the CPU more: [OPUS_48K_PREBUFFER_MS].
      */
-    private var targetMs = if (aac) MUSIC_START_MS else PREBUFFER_MS
+    private var targetMs = when {
+        aac -> MUSIC_START_MS
+        format.codec == AudioCodecKind.OPUS && rate == 48_000 -> OPUS_48K_PREBUFFER_MS
+        else -> PREBUFFER_MS
+    }
     private fun bytesFor(ms: Int) = rate * format.channels * 2 * ms / 1000
     private var prebufferBytes = bytesFor(targetMs)
     private var framesWritten = 0L
@@ -608,10 +613,10 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
             val channels = if (format.channels == 1) PcmFormat.CHANNEL_OUT_MONO else PcmFormat.CHANNEL_OUT_STEREO
             val minimum = AudioTrack.getMinBufferSize(rate, channels, PcmFormat.ENCODING_PCM_16BIT)
             require(minimum > 0) { "Unsupported audio sample rate" }
-            // The buffer stays above the prebuffer (200 ms floor, music: its largest target), so writes before play()
+            // The buffer stays 200 ms above the prebuffer (music: its largest target), so writes before play()
             // never block.
             val audio = AudioTrack(AudioManager.STREAM_MUSIC, rate, channels, PcmFormat.ENCODING_PCM_16BIT,
-                maxOf(minimum * 2, if (aac) bytesFor(MUSIC_MAX_MS + 200) else bytesFor(200)), AudioTrack.MODE_STREAM)
+                maxOf(minimum * 2, bytesFor((if (aac) MUSIC_MAX_MS else targetMs) + 200)), AudioTrack.MODE_STREAM)
             track = audio
             check(audio.state == AudioTrack.STATE_INITIALIZED) { "AudioTrack did not initialize" }
             focus.acquire(audio, music)
@@ -760,6 +765,8 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
         const val RTP_HEADER = 12
         /** Above the 55–120 ms Opus decode stalls seen on the unit; a prompt starts this much later. */
         const val PREBUFFER_MS = 100
+        /** Opus decoded at 48 kHz (Siri over Wi-Fi): before 0.0.45b-10 it stuttered there with no prebuffer. */
+        const val OPUS_48K_PREBUFFER_MS = 200
         /** No packet for this long: the stream paused or ended, so buffered audio plays at once. */
         const val IDLE_START_NS = 60_000_000L
         /** Music reserve: start, step after each dry track that was a gap, and ceiling (the iPhone allows 1000 ms). */
