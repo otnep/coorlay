@@ -107,6 +107,9 @@
     display: grid; place-items: center; font-weight: 700; font-size: 15px;
   }
 
+  .fix { margin-top: 14px; }
+  .fix p { margin: 0 0 14px; }
+
   .warn { background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-text); border-radius: var(--radius); padding: 18px 20px; }
   .warn h3 { color: #ffd58a; }
   .warn p { margin: 6px 0 0; }
@@ -239,6 +242,18 @@
         <span lang="en">Connect the iPhone with a cable or choose "Wireless connection". For wireless, first pair the iPhone in the head unit's own Bluetooth menu.</span>
       </li>
     </ol>
+    <div class="card fix">
+      <h3><span lang="ru">Wi-Fi Direct не включается?</span><span lang="en">Wi-Fi Direct does not turn on?</span></h3>
+      <p>
+        <span lang="ru">На штатной прошивке Wi-Fi Direct не работает из-за ошибки в её настройках Wi-Fi. Её исправляет флешка: магнитола сама запускает скрипт от root, он меняет один системный файл и больше ничего не трогает. Можно исправить только Wi-Fi Direct, не переустанавливая coorlay. Без исправления беспроводной CarPlay работает через точку доступа магнитолы.</span>
+        <span lang="en">On the stock firmware Wi-Fi Direct is broken by a mistake in its Wi-Fi configuration. A USB stick fixes it: the head unit runs the script as root, and it changes one system file and nothing else. You can fix only Wi-Fi Direct without reinstalling coorlay. Without the fix, wireless CarPlay works through the head unit's hotspot.</span>
+      </p>
+      <a class="btn" href="https://github.com/otnep/coorlay/blob/main/RootInstall/ROOT-INSTALL.md">
+        <span lang="ru">Инструкция по исправлению Wi-Fi Direct</span>
+        <span lang="en">Wi-Fi Direct fix instructions (in Russian)</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+      </a>
+    </div>
   </section>
 
   <section id="disclaimer">
