@@ -63,6 +63,10 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
     /** P2P state reports (sticky: the current one arrives on registration); see [WifiDirectReadiness]. */
     private val p2pEvents = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == android.net.wifi.p2p.WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION) {
+                p2pConnectionChanged(intent)
+                return
+            }
             val state = intent?.getIntExtra(android.net.wifi.p2p.WifiP2pManager.EXTRA_WIFI_STATE, -1)
             val enabled = when (state) {
                 android.net.wifi.p2p.WifiP2pManager.WIFI_P2P_STATE_ENABLED -> true
@@ -277,7 +281,8 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
         ConnectionDiagnostics.platform(this).forEach { log(it, display = false) }
         try { registerReceiver(bluetoothEvents, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED).apply { addAction(OEM_SOURCE_CHANGED); addAction(OEM_CALL_STATE) }) }
         catch (error: Exception) { log("BT STATE receiver: ${error.javaClass.simpleName}: ${error.message}", display = false) }
-        try { registerReceiver(p2pEvents, IntentFilter(android.net.wifi.p2p.WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION)) }
+        try { registerReceiver(p2pEvents, IntentFilter(android.net.wifi.p2p.WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION).apply {
+            addAction(android.net.wifi.p2p.WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION) }) }
         catch (error: Exception) { log("P2P STATE receiver: ${error.javaClass.simpleName}: ${error.message}", display = false) }
         log(WifiDirectReadiness.describe(applicationContext, prefs) + "; mode=${if (hotspotMode(prefs)) "hotspot" else "Wi-Fi Direct"}", display = false)
         // A previous run that held Bluetooth off for wireless CarPlay and did not get to turn it on again.
@@ -1252,7 +1257,7 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
                 // Always sampled in wireless sessions (the silence check needs it); journaled only with detailed logs.
                 if (wireless) {
                     wlanStatsLogged = detailedLogs
-                    wlanStats = WlanStats()
+                    wlanStats = WlanStats(groupOnly = !manual)
                     runOnUiThread { handler.removeCallbacks(wlanTick); handler.postDelayed(wlanTick, WLAN_STATS_MS) }
                 }
                 log("START: starting the controller", display = false)
@@ -1442,7 +1447,29 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
     /** The iPhone went silent on Wi-Fi with the picture shown: end the frozen session; automatic attempts go on. */
     private fun wirelessSilent(stats: WlanStats) {
         if (destroyed || wlanStats !== stats || !sessionWireless || !videoActive) return
-        log("WLAN: nothing received for ${stats.silentSamples * WLAN_STATS_MS / 1000} s; ending the wireless session", display = false)
+        wirelessGone("WLAN: nothing received for ${stats.silentSamples * WLAN_STATS_MS / 1000} s")
+    }
+    /** The Wi-Fi Direct session ([WlanStats] instance) in which the group last had a client. */
+    private var p2pClientSeen: WlanStats? = null
+    /**
+     * Wi-Fi Direct reports every client that joins or leaves the group. The iPhone switched its Wi-Fi off at 07:39:21
+     * (tester, 2026-10-14; wpa_supplicant AP-STA-DISCONNECTED) and the picture stayed frozen until a force stop.
+     * Only a group that had a client in this session counts, so a report without the client list ends nothing.
+     */
+    private fun p2pConnectionChanged(intent: Intent) {
+        val stats = wlanStats ?: return
+        if (!stats.groupOnly || !sessionWireless) return
+        val group = intent.getParcelableExtra<android.net.wifi.p2p.WifiP2pGroup>(
+            android.net.wifi.p2p.WifiP2pManager.EXTRA_WIFI_P2P_GROUP)
+        val connected = intent.getParcelableExtra<android.net.NetworkInfo>(
+            android.net.wifi.p2p.WifiP2pManager.EXTRA_NETWORK_INFO)?.isConnected
+        val clients = group?.clientList?.size ?: 0
+        log("WIFI-DIRECT group ${group?.`interface`} clients=$clients connected=$connected video=$videoActive", display = false)
+        if (clients > 0) { p2pClientSeen = stats; return }
+        if (p2pClientSeen === stats && videoActive && !destroyed) wirelessGone("WIFI-DIRECT: the iPhone left the group")
+    }
+    private fun wirelessGone(reason: String) {
+        log("$reason; ending the wireless session", display = false)
         stopSession(releaseHotspot = true)
         log(tr("iPhone перестал отвечать по Wi-Fi; CarPlay отключён", "The iPhone stopped answering over Wi-Fi; CarPlay disconnected"))
         connectionLost(wireless = true)

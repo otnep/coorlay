@@ -40,6 +40,21 @@ p2p-p2p0-0: ${p2p * 1024} $p2p 0 0 0 0 0 0 0 0 0 0 0 0 0 0
         assertEquals(1, stats.silentSamples)
     }
 
+    @Test fun wifiDirectSessionCountsOnlyTheGroup() {
+        fun devAll(other: Long, group: Long) = """
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+ wlan0: ${other * 1024} $other 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+  p2p0: ${other * 1024} $other 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+p2p-p2p0-0: ${group * 1024} $group 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+""".trimIndent()
+        var files = mapOf("/proc/net/dev" to devAll(0, 100))
+        val stats = WlanStats(groupOnly = true) { files[it] }
+        stats.sample()
+        files = mapOf("/proc/net/dev" to devAll(20, 100))
+        assertEquals("WLAN p2p-p2p0-0 rx=0pk/0KB err=0 drop=0 tx=0pk err=0 drop=0", stats.sample())
+        assertEquals(1, stats.silentSamples)
+    }
+
     @Test fun kernelUdpDropsAreReported() {
         fun udp(inErrors: Long, rcvbuf: Long) =
             "Udp: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors\nUdp: 900 0 $inErrors 10 $rcvbuf 0\n"

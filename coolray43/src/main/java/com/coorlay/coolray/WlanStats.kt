@@ -8,10 +8,15 @@ import java.io.File
  * wlan0 and in the kernel TCP counters, so packet loss can be told apart from an iPhone that simply sends less.
  */
 internal class WlanStats(
+    /**
+     * Wi-Fi Direct session: count only the group interface (p2p-p2p0-N). With the iPhone gone, wlan0/p2p0 still
+     * received 5–30 packets per 5 s and the frozen picture stayed for minutes (tester, 2026-10-14 07:39).
+     */
+    val groupOnly: Boolean = false,
     private val read: (String) -> String? = { path -> try { File(path).readText() } catch (_: Exception) { null } },
 ) {
     private var previous: Map<String, Long>? = null
-    /** Interfaces counted in the last sample: wlan0 and the Wi-Fi Direct ones (p2p0, p2p-p2p0-N). */
+    /** Interfaces counted in the last sample: wlan0 and the Wi-Fi Direct ones (p2p0, p2p-p2p0-N), or the group only. */
     private var interfaces = listOf<String>()
 
     /**
@@ -45,7 +50,7 @@ internal class WlanStats(
         val seen = mutableListOf<String>()
         read("/proc/net/dev")?.lineSequence()?.forEach { line ->
             val name = line.substringBefore(':', "").trim()
-            if (name != "wlan0" && !name.startsWith("p2p")) return@forEach
+            if (if (groupOnly) !name.startsWith("p2p-") else name != "wlan0" && !name.startsWith("p2p")) return@forEach
             val v = line.substringAfter(':').trim().split(Regex("\\s+")).mapNotNull { it.toLongOrNull() }
             if (v.size < 12) return@forEach
             seen += name
