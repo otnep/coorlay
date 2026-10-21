@@ -23,8 +23,8 @@ android {
         applicationId = "com.coorlay"
         minSdk = 18
         targetSdk = 22
-        versionCode = 7
-        versionName = "1.0.3-4-debug"
+        versionCode = 8
+        versionName = "1.0.3"
         multiDexEnabled = true
         // ClusterMediaTest's relay runs in the test package's own process, which loads only the main DEX.
         multiDexKeepProguard = file("multidex-test-keep.pro")
