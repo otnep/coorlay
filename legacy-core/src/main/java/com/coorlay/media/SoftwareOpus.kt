@@ -53,7 +53,10 @@ class SoftwareOpusEncoder(
     val frameBytes: Int = frameSamples * CHANNELS * 2
 
     /** Encodes one 20 ms little-endian 16-bit mono frame into one Opus packet. */
-    fun encode(pcm: ByteArray): ByteArray {
+    fun encode(pcm: ByteArray): ByteArray = output.copyOf(encodeToOutput(pcm))
+
+    /** [encode] without a new array: the packet is the first returned bytes of [output], until the next call. */
+    fun encodeToOutput(pcm: ByteArray): Int {
         require(pcm.size == frameBytes) { "Opus frame must be $frameBytes bytes, got ${pcm.size}" }
         val encoder = concentus
         val length = if (encoder != null) {
@@ -62,8 +65,11 @@ class SoftwareOpusEncoder(
             check(handle != 0L) { "Opus encoder closed" }
             NativeOpus.checkResult(NativeOpus.encode(handle, pcm, frameSamples, output), "encode")
         }
-        return output.copyOf(length)
+        return length
     }
+
+    /** Where [encodeToOutput] puts the packet. */
+    val packet: ByteArray get() = output
 
     /** Frees the libopus state; encode fails after this. Safe from any thread, more than once. */
     @Synchronized override fun close() {

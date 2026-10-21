@@ -131,6 +131,29 @@ object AirPlayCrypto {
         }
     }
 
+    /**
+     * ChaCha20-Poly1305 sealer reused for every packet of one stream (one thread), the sending side of [Opener].
+     * [chachaSeal] made a new cipher and four arrays for each 20 ms microphone packet.
+     */
+    class Sealer(key: ByteArray) {
+        private val cipher = ChaCha20Poly1305()
+        private val keyParameter = KeyParameter(key.copyOf())
+
+        /**
+         * Seals [length] bytes at [offset] of [input] into [output] at [outputOffset] (ciphertext, then the 16-byte
+         * tag) under the [nonce64] of [counter], with [aadLength] bytes of associated data at [aadOffset] of [aad].
+         * Returns the sealed length. [output] may be [aad] when the two ranges do not overlap.
+         */
+        fun seal(counter: Long, aad: ByteArray, aadOffset: Int, aadLength: Int, input: ByteArray, offset: Int, length: Int,
+            output: ByteArray, outputOffset: Int): Int {
+            // A fresh nonce array: the cipher refuses to encrypt twice under the nonce array it last saw.
+            cipher.init(true, AEADParameters(keyParameter, MAC_BITS, nonce64(counter)))
+            cipher.processAADBytes(aad, aadOffset, aadLength)
+            val processed = cipher.processBytes(input, offset, length, output, outputOffset)
+            return processed + cipher.doFinal(output, outputOffset + processed)
+        }
+    }
+
     /** 12-byte nonce: four zero bytes followed by an eight-byte little-endian counter. */
     fun nonce64(counter: Long): ByteArray {
         val nonce = ByteArray(NONCE_SIZE)

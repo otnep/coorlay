@@ -104,6 +104,47 @@ object MicrophonePacketizer {
         return packet
     }
 
+    /**
+     * [sealPacket] for one uplink, reused for every packet (one thread): one cipher and one packet buffer instead
+     * of a new cipher and five arrays every 20 ms, which fed Dalvik's GC through every CarPlay call and Siri reply.
+     */
+    class PacketSealer(key: ByteArray, private val payloadType: Int) {
+        private val sealer = AirPlayCrypto.Sealer(key)
+
+        /** The last sealed packet, valid until the next [seal]. */
+        var packet = ByteArray(0)
+            private set
+
+        /** Seals the first [bodyLength] bytes of [body] like [sealPacket] into [packet]; returns its length. */
+        fun seal(counters: MicrophoneCounters, body: ByteArray, bodyLength: Int, samples: Int): Int {
+            val size = RTP_HEADER_LEN + bodyLength + TAG_LEN + NONCE_LEN
+            if (packet.size < size) packet = ByteArray(size)
+            val out = packet
+            out[0] = 0x80.toByte()
+            out[1] = (payloadType and 0x7f).toByte()
+            putU16Be(out, 2, counters.sequence)
+            putU32Be(out, 4, counters.timestamp)
+            out.fill(0, 8, RTP_HEADER_LEN)
+            val sealed = sealer.seal(counters.nonce, out, 4, RTP_HEADER_LEN - 4, body, 0, bodyLength, out, RTP_HEADER_LEN)
+            putU64Le(out, RTP_HEADER_LEN + sealed, counters.nonce)
+            counters.sequence = (counters.sequence + 1) and 0xffff
+            counters.timestamp += samples
+            counters.nonce++
+            return RTP_HEADER_LEN + sealed + NONCE_LEN
+        }
+    }
+
+    /** [toWirePcm] of the first [length] bytes of [pcm] into [output]. */
+    fun toWirePcmInto(pcm: ByteArray, length: Int, output: ByteArray) {
+        var index = 0
+        while (index + 1 < length) {
+            output[index] = pcm[index + 1]
+            output[index + 1] = pcm[index]
+            index += 2
+        }
+        if (length % 2 == 1) output[length - 1] = pcm[length - 1]
+    }
+
     /** Captured Android PCM is little-endian; CarPlay's wired microphone payload is big-endian. */
     fun toWirePcm(pcmLittleEndian: ByteArray): ByteArray {
         val output = pcmLittleEndian.copyOf()

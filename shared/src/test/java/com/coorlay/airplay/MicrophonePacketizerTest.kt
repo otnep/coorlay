@@ -41,6 +41,33 @@ class MicrophonePacketizerTest {
     }
 
     @Test
+    fun reusedSealerSendsTheSameBytesAsSealPacket() {
+        val key = ByteArray(32) { index -> (index * 7 + 3).toByte() }
+        val expected = MicrophoneCounters(sequence = 0xfffe, timestamp = 1000, nonce = 41)
+        val reused = MicrophoneCounters(sequence = 0xfffe, timestamp = 1000, nonce = 41)
+        val sealer = MicrophonePacketizer.PacketSealer(key, 100)
+        // Shorter bodies after longer ones: the reused buffer keeps stale bytes past the packet.
+        for ((index, size) in listOf(1920, 80, 3, 1920, 0, 120).withIndex()) {
+            val body = ByteArray(size + 5) { (it * 13 + index).toByte() }
+            val packet = MicrophonePacketizer.sealPacket(key, 100, expected, body.copyOf(size), 960)
+            val length = sealer.seal(reused, body, size, 960)
+            assertArrayEquals("packet $index", packet, sealer.packet.copyOf(length))
+        }
+        assertEquals(expected.sequence, reused.sequence)
+        assertEquals(expected.timestamp, reused.timestamp)
+        assertEquals(expected.nonce, reused.nonce)
+    }
+
+    @Test
+    fun wirePcmInPlaceMatchesTheCopy() {
+        val pcm = ByteArray(641) { (it * 31).toByte() }
+        val output = ByteArray(700) { 0x55 }
+        MicrophonePacketizer.toWirePcmInto(pcm, pcm.size, output)
+        assertArrayEquals(MicrophonePacketizer.toWirePcm(pcm), output.copyOf(pcm.size))
+        assertEquals(0x55, output[pcm.size].toInt())
+    }
+
+    @Test
     fun pcmIsConvertedToBigEndian() {
         assertArrayEquals(
             byteArrayOf(0x12, 0x34, 0x56, 0x78),

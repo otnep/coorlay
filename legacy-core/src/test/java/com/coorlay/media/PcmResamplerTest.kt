@@ -26,6 +26,19 @@ class PcmResamplerTest {
         assertEquals((5 + 320_000) * 3 - 3, total)
     }
 
+    @Test fun processIntoReusesItsOutputAndMatchesProcess() {
+        val copying = PcmResampler(16_000, 48_000, 1)
+        val reusing = PcmResampler(16_000, 48_000, 1)
+        var first: ByteArray? = null
+        repeat(20) { block ->
+            val input = ByteArray(640) { (it * 7 + block).toByte() }
+            val expected = copying.process(input, input.size)
+            val written = reusing.processInto(input, input.size)
+            assertEquals(expected.toList(), reusing.output.copyOf(written).toList())
+            if (first == null) first = reusing.output else org.junit.Assert.assertSame(first, reusing.output)
+        }
+    }
+
     @Test fun keepsNegativeFullScaleValues() {
         val out = samples(PcmResampler(8_000, 16_000, 1).process(pcm(-32768, -32768, 32767), 6))
         assertEquals(listOf(-32768, -32768, -32768, -1), out.toList())

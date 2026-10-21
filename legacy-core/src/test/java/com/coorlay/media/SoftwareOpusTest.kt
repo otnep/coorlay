@@ -22,6 +22,18 @@ class SoftwareOpusTest {
     }
 
     @Test
+    fun encodeToOutputGivesTheSamePacketsAsEncode() {
+        val copying = SoftwareOpusEncoder(16_000, 32_000)
+        val reusing = SoftwareOpusEncoder(16_000, 32_000)
+        repeat(20) { frame ->
+            val pcm = tone(copying.frameBytes, 16_000, frame)
+            val expected = copying.encode(pcm)
+            val length = reusing.encodeToOutput(pcm)
+            assertEquals(expected.toList(), reusing.packet.copyOf(length).toList())
+        }
+    }
+
+    @Test
     fun the16kHzCaptureEncodesTo20msPacketsThatDecodeAt48kHz() {
         val encoder = SoftwareOpusEncoder(16_000, 32_000)
         assertEquals(320, encoder.frameSamples)

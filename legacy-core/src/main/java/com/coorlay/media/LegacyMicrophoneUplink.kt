@@ -34,6 +34,11 @@ internal class MicrophoneUplink(
     private var resampler: PcmResampler? = null
     private var opus: SoftwareOpusEncoder? = null
     private var frameBytes = config.frameBytes
+    // Capture thread only, reused for every 20 ms packet: a new cipher and six arrays per packet (two more when
+    // resampling a wired PCM stream) kept Dalvik's GC busy through every CarPlay call and Siri reply.
+    private val sealer = MicrophonePacketizer.PacketSealer(config.key, config.payloadType)
+    private val datagram = DatagramPacket(ByteArray(0), 0, config.host, config.port)
+    private var wirePcm = ByteArray(0)
 
     /** Chosen capture path after a successful [start], or the failure reason otherwise. */
     @Volatile var status: String = "not started"
@@ -181,8 +186,9 @@ internal class MicrophoneUplink(
                 if (count == 0) {
                     continue
                 }
-                val samples = resampler?.process(readBuffer, count) ?: readBuffer
-                val available = if (samples === readBuffer) count else samples.size
+                val converter = resampler
+                val available = converter?.processInto(readBuffer, count) ?: count
+                val samples = converter?.output ?: readBuffer
                 var offset = 0
                 while (offset < available && running.get()) {
                     val copied = minOf(frame.size - filled, available - offset)
@@ -207,21 +213,18 @@ internal class MicrophoneUplink(
         val encoder = opus
         if (encoder != null) {
             val started = System.nanoTime()
-            val body = try { encoder.encode(frame) } catch (error: Exception) {
+            val length = try { encoder.encodeToOutput(frame) } catch (error: Exception) {
                 if (encodeErrors++ < 3) Log.w(TAG, "microphone Opus encode failed", error)
                 return
             }
             noteEncode(System.nanoTime() - started)
             // The RTP clock is the one the iPhone chose (24 kHz for Siri), not the capture rate.
-            sendPacket(socket = socket, counters = counters, body = body, samples = config.rtpSamplesPerPacket)
+            sendPacket(socket, counters, encoder.packet, length, config.rtpSamplesPerPacket)
             return
         }
-        sendPacket(
-            socket = socket,
-            counters = counters,
-            body = MicrophonePacketizer.toWirePcm(frame),
-            samples = config.samplesPerPacket,
-        )
+        if (wirePcm.size < frame.size) wirePcm = ByteArray(frame.size)
+        MicrophonePacketizer.toWirePcmInto(frame, frame.size, wirePcm)
+        sendPacket(socket, counters, wirePcm, frame.size, config.samplesPerPacket)
     }
 
     private var encodeErrors = 0
@@ -247,22 +250,19 @@ internal class MicrophoneUplink(
         socket: DatagramSocket,
         counters: MicrophoneCounters,
         body: ByteArray,
+        bodyLength: Int,
         samples: Int,
     ) {
-        val packet = MicrophonePacketizer.sealPacket(
-            key = config.key,
-            payloadType = config.payloadType,
-            counters = counters,
-            body = body,
-            samples = samples,
-        )
+        val size = sealer.seal(counters, body, bodyLength, samples)
+        val packet = sealer.packet
         try {
-            socket.send(DatagramPacket(packet, packet.size, config.host, config.port))
+            datagram.setData(packet, 0, size)
+            socket.send(datagram)
             if (firstPacketLogged.compareAndSet(false, true)) {
                 Log.i(
                     TAG,
-                    "microphone first packet bytes=${packet.size} body=${body.size} " +
-                        "head=${packet.copyOf(minOf(packet.size, 16)).toHexString()} " +
+                    "microphone first packet bytes=$size body=$bodyLength " +
+                        "head=${packet.copyOf(minOf(size, 16)).toHexString()} " +
                         "port=${config.port}",
                 )
             }
