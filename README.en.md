@@ -129,6 +129,7 @@ Because the package is new, it does not upgrade earlier coorlay builds
   [DiPlay](https://github.com/shihabal3amri/DiPlay) (shihabal3amri); their original
   READMEs and notices are in [docs/upstream](docs/upstream).
 - The project is licensed under GPL-3.0, see [LICENSE](LICENSE).
+- libopus 1.5.2 (Xiph.Org) has its own license in `legacy-core/src/main/jni/opus/COPYING`.
 - Concentus (Opus in Java) has its own license in `legacy-core/src/main/java/org/concentus/LICENSE`.
 - Bouncy Castle, SLF4J, Conscrypt — license texts in [docs/licenses/dependencies](docs/licenses/dependencies).
 - CarPlay and iPhone are trademarks of Apple Inc.; Geely and Coolray are trademarks of

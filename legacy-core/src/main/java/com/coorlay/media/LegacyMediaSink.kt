@@ -691,7 +691,7 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
                 inputs = decoder.inputBuffers; outputs = decoder.outputBuffers
             }
             if (format.codec == AudioCodecKind.OPUS) opus = SoftwareOpusDecoder(rate, format.channels)
-            report("Audio ${format.audioType}: ${format.codec}${if (opus != null) " (software)" else ""}, " +
+            report("Audio ${format.audioType}: ${format.codec}${opus?.let { " (${it.backend})" } ?: ""}, " +
                 "$rate Hz, ${format.channels} channels, prebuffer=${targetMs}ms")
             while (running) {
                 val packet = packets.poll(10, TimeUnit.MILLISECONDS)
@@ -762,6 +762,7 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
         } catch (_: InterruptedException) { } catch (error: Exception) { report("Audio error: ${error.message}") }
         finally {
             runCatching { reportStatsIfDue(final = true) }
+            opus?.close()
             val old = codec; codec = null; runCatching { old?.stop() }; runCatching { old?.release() }
             track?.let { focus.release(it); runCatching { it.stop() }; runCatching { it.release() } }
             track = null

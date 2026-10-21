@@ -7,6 +7,8 @@ unmodified. Upstream publishes no release artifact of this port.
 
 Copied from DiPlay 0.2.16 (`shared/src/main/java/org/concentus`). coorlay uses `OpusEncoder` for the
 wireless CarPlay microphone and `OpusDecoder` for the iPhone's Opus voice streams, because Android 4.3
-has no MediaCodec Opus codec. See `legacy-core/src/main/java/com/coorlay/media/SoftwareOpus.kt`.
+has no MediaCodec Opus codec. Since 1.0.3 libopus (`legacy-core/src/main/jni/opus`) does that work and
+Concentus is the fallback when the native library does not load, and what the JVM unit tests run. See
+`legacy-core/src/main/java/com/coorlay/media/SoftwareOpus.kt`.
 
 Licensed under the BSD-style licence in `LICENSE`, which retains the Opus copyright notices.

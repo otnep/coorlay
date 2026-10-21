@@ -111,7 +111,7 @@ internal class MicrophoneUplink(
             opus = encoder
             frameBytes = encoder.frameBytes
             resampler = if (captureRate != encoderRate) PcmResampler(captureRate, encoderRate, config.channels) else null
-            status = "capture ${captureRate} Hz src=$captureSource -> Opus (software) ${encoderRate} Hz " +
+            status = "capture ${captureRate} Hz src=$captureSource -> Opus (${encoder.backend}) ${encoderRate} Hz " +
                 "rtpClock=${config.opusClockRate} type=${config.audioType}"
         } else {
             resampler = if (captureRate != config.sampleRate) {
@@ -314,6 +314,8 @@ internal class MicrophoneUplink(
         } catch (_: Exception) {
             // Best effort.
         }
+        // A capture thread still encoding gets an exception, not freed native memory (encoder's own lock).
+        opus?.close()
     }
 
     private companion object {

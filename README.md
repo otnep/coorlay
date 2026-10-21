@@ -118,6 +118,7 @@ coorlay — порт [DiPlay](https://github.com/shihabal3amri/DiPlay) (кото
   [DiPlay](https://github.com/shihabal3amri/DiPlay) (shihabal3amri); исходные
   README и уведомления — в [docs/upstream](docs/upstream).
 - Лицензия проекта — GPL-3.0, см. [LICENSE](LICENSE).
+- libopus 1.5.2 (Xiph.Org) — своя лицензия в `legacy-core/src/main/jni/opus/COPYING`.
 - Concentus (Opus на Java) — своя лицензия в `legacy-core/src/main/java/org/concentus/LICENSE`.
 - Bouncy Castle, SLF4J, Conscrypt — тексты лицензий в [docs/licenses/dependencies](docs/licenses/dependencies).
 - CarPlay и iPhone — товарные знаки Apple Inc.; Geely и Coolray — товарные знаки
