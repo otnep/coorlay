@@ -319,6 +319,8 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
         log("HARDKEY key=0x${Integer.toHexString(key)} action=$action" +
             (button?.let { " -> CarPlay media=$it sent=${sent == true}" } ?: ""), display = false)
     }
+    /** Until then (uptimeMillis) a pause of coorlay is the stock phone screen opened by the wheel's call key. */
+    private var callKeyReturnUntil = 0L
     /** Last com.neusoft.geely.callstatechanged value: non-zero while the stock phone has a Bluetooth (HFP) call. */
     @Volatile private var oemCallState = 0
     /**
@@ -331,7 +333,15 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
         val short = wheelKeys.shortPress(OemHardKeys.KEY_CALL, action)
         val active = controller
         val phase = active?.callPhase()
-        if (!short || active == null || !videoActive || phase == null || oemCallState != 0) {
+        val carPlayCall = active != null && videoActive && phase != null && oemCallState == 0
+        // The stock phone opens its screen on the release 60-100 ms before coorlay sees it (KC2Log, 2026-10-21), so
+        // the return to coorlay is armed on the press; a long press is the firmware's and disarms it. The stock
+        // screen showed for 0.6-0.8 s while only the checks below brought coorlay back (1.0.3-4-debug on the unit).
+        when (action) {
+            OemHardKeys.ACTION_DOWN -> if (carPlayCall) callKeyReturnUntil = SystemClock.uptimeMillis() + CALL_KEY_WATCH_MS
+            OemHardKeys.ACTION_LONG_PRESS -> callKeyReturnUntil = 0L
+        }
+        if (!short || active == null || !carPlayCall) {
             log("HARDKEY key=0x${Integer.toHexString(OemHardKeys.KEY_CALL)} action=$action" +
                 (if (short) " CarPlay call=${phase ?: "none"} oemCall=$oemCallState: left to the head unit" else ""), display = false)
             return
@@ -340,7 +350,7 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
         val sent = if (answer) active.answerCall() else active.endCall()
         log("HARDKEY key=0x${Integer.toHexString(OemHardKeys.KEY_CALL)} action=$action call=$phase -> CarPlay " +
             "${if (answer) "answer" else "end call"} sent=$sent", display = false)
-        // The stock phone opens its screen on the same release; its start takes a moment on this unit.
+        // Covered at once, coorlay already came back from onPause; these catch a stock screen that opens late.
         for (delay in CALL_KEY_RETURN_DELAYS_MS) handler.postDelayed({
             if (!destroyed && controller === active && !resumed) bringToFront()
         }, delay)
@@ -992,6 +1002,16 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
     override fun onPause() {
         resumed = false
         if (pendingVpn) vpnWindowDeparted = true
+        if (SystemClock.uptimeMillis() < callKeyReturnUntil) {
+            callKeyReturnUntil = 0L
+            val active = controller
+            handler.postDelayed({
+                if (!destroyed && active != null && controller === active && !resumed) {
+                    log("HARDKEY call key: covered by another screen, coorlay returns", display = false)
+                    bringToFront()
+                }
+            }, CALL_KEY_PAUSE_RETURN_MS)
+        }
         super.onPause()
     }
     override fun onResume() {
@@ -1637,6 +1657,9 @@ internal const val BT_OFF_BY_COORLAY = "bluetoothOffByCoorlay"
 private const val MODE_CHOICE_WINDOW_MS = 10_000L
 /** After the wheel's phone key in a CarPlay call: when to check that the stock phone screen did not stay on top. */
 private val CALL_KEY_RETURN_DELAYS_MS = longArrayOf(700L, 2000L)
+/** How long after the call key a pause of coorlay counts as the stock phone screen, and when coorlay then returns. */
+private const val CALL_KEY_WATCH_MS = 2500L
+private const val CALL_KEY_PAUSE_RETURN_MS = 100L
 /** After returning to CarPlay: no music stream by then means the iPhone stayed paused. */
 private const val RESUME_CHECK_DELAY_MS = 2500L
 /** Whether the OEM player actually yielded only shows a moment after the return. */

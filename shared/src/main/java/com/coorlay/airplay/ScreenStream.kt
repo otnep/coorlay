@@ -66,27 +66,13 @@ class ScreenStream(
     private var server: ServerSocket? = null
     private var socket: Socket? = null
     private var thread: Thread? = null
-    private val processing = ScreenProcessingStats(onDiagnostic)
     /**
      * Decrypted frames travel to the decoder in these buffers and come back once MediaCodec has copied them. A new
      * array per frame (1-1.5 MB/s) still caused every GC_FOR_ALLOC pause of 31-49 ms on the head unit (2026-10-12).
+     * Made with the stream, before its first frame (see ScreenFramePool).
      */
-    private val framePool = java.util.concurrent.ArrayBlockingQueue<ByteArray>(FRAME_POOL_SIZE)
-    private val recycleFrame: (ByteArray) -> Unit = { framePool.offer(it) }
-    /** Largest frame seen: new buffers take this size, so keyframes stop replacing the pool's smaller buffers. */
-    private var largestFrame = 0
-
-    private fun frameBuffer(minimum: Int): ByteArray {
-        if (minimum > largestFrame) largestFrame = minimum
-        while (true) {
-            val buffer = framePool.poll() ?: break
-            if (buffer.size >= minimum) return buffer
-            // Too small for this keyframe: it is replaced by one of the largest size below.
-        }
-        // A keyframe of hundreds of KB (10 Mbit/s bursts) replaced small buffers one by one, and each new one
-        // still triggered a GC_FOR_ALLOC pause (0.0.47b-4 on the unit, 2026-10-12).
-        return ByteArray((largestFrame + FRAME_BUFFER_STEP - 1) / FRAME_BUFFER_STEP * FRAME_BUFFER_STEP)
-    }
+    private val framePool = ScreenFramePool()
+    private val processing = ScreenProcessingStats(onDiagnostic, created = { framePool.created })
     @Volatile private var listener: Listener = object : Listener {}
 
     fun listen(listener: Listener): Int {
@@ -156,7 +142,7 @@ class ScreenStream(
         when (header[OPCODE_OFFSET].toInt() and 0xff) {
             OP_VIDEO_FRAME -> {
                 val started = System.nanoTime()
-                val payload = frameBuffer(maxOf(bodySize - ScreenCodec.TAG_SIZE, 1))
+                val payload = framePool.obtain(maxOf(bodySize - ScreenCodec.TAG_SIZE, 1))
                 val length = if (bodySize >= ScreenCodec.TAG_SIZE) {
                     val counter = frameCounter.get()
                     (frameDecryptor?.openInto(counter, header, body, bodySize, payload)
@@ -176,7 +162,7 @@ class ScreenStream(
                 }
                 ScreenCodec.lengthPrefixedToAnnexBInPlace(payload, length)
                 val converted = System.nanoTime()
-                listener.onFrame(payload, length, ScreenCodec.senderNanos(header), arrivalNanos, recycleFrame)
+                listener.onFrame(payload, length, ScreenCodec.senderNanos(header), arrivalNanos, framePool.recycle)
                 processing.frame(bodySize, decrypted - started, converted - decrypted, System.nanoTime() - converted)
             }
             OP_VIDEO_CONFIG -> {
@@ -206,9 +192,6 @@ class ScreenStream(
         const val OP_VIDEO_CONFIG = 1
         const val MAX_BODY = 8 * 1024 * 1024
         const val INITIAL_BODY = 256 * 1024
-        /** The decoder queue holds up to 60 frames; beyond this many buffers in flight new ones are made. */
-        const val FRAME_POOL_SIZE = 24
-        const val FRAME_BUFFER_STEP = 32 * 1024
     }
 }
 
@@ -216,7 +199,10 @@ class ScreenStream(
 internal class ScreenProcessingStats(
     private val report: (String) -> Unit,
     private val nowNs: () -> Long = System::nanoTime,
+    /** Frame buffers made so far; each window reports the new ones (poolNew), each a possible GC pause. */
+    private val created: () -> Int = { 0 },
 ) {
+    private var createdBefore = created()
     private var windowStart = nowNs()
     private var frames = 0
     private var bytes = 0L
@@ -232,7 +218,9 @@ internal class ScreenProcessingStats(
         val now = nowNs()
         if (now - windowStart < 5_000_000_000L) return
         report("Video processing frames=$frames bytes=$bytes decryptAvgUs=${decryptNs / frames / 1000} " +
-            "decryptMaxUs=${decryptMaxNs / 1000} convertMaxUs=${convertMaxNs / 1000} deliveryMaxUs=${deliverMaxNs / 1000}")
+            "decryptMaxUs=${decryptMaxNs / 1000} convertMaxUs=${convertMaxNs / 1000} deliveryMaxUs=${deliverMaxNs / 1000} " +
+            "poolNew=${created() - createdBefore}")
+        createdBefore = created()
         windowStart = now; frames = 0; bytes = 0L; decryptNs = 0L
         decryptMaxNs = 0L; convertMaxNs = 0L; deliverMaxNs = 0L
     }

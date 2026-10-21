@@ -40,6 +40,7 @@ object Iap2FrameFormatter {
         }
         val lines = ArrayList<String>()
         val secrets = SecretFlag()
+        val personal = endpoint?.feature == PERSONAL_FEATURE
         if (parameters == null) {
             lines += "  body=malformed TLV"
         } else {
@@ -49,10 +50,15 @@ object Iap2FrameFormatter {
                 depth = 1,
                 lines = lines,
                 secrets = secrets,
+                personal = personal,
             )
         }
         // The hex preview of 0x5703/0x4301 carried the Wi-Fi passphrase in exported logs (2026-10-09).
-        lines += if (secrets.found) "  raw-body=[redacted: frame contains a secret]" else "  raw-body=${hexPreview(frame.payload)}"
+        lines += when {
+            secrets.found -> "  raw-body=[redacted: frame contains a secret]"
+            personal -> "  raw-body=[redacted: personal data]"
+            else -> "  raw-body=${hexPreview(frame.payload)}"
+        }
 
         val endpointText = endpoint?.let { " ${it.name}" }.orEmpty()
         return buildString {
@@ -96,6 +102,18 @@ object Iap2FrameFormatter {
 
     private class SecretFlag { var found = false }
 
+    /**
+     * Calls, contacts and recents: CallStateUpdate printed the caller's number and contact name in logs
+     * that users share (2026-10-21). Their strings and bytes are left out; numbers such as the call status stay.
+     */
+    private const val PERSONAL_FEATURE = "Communications"
+    private val SCALARS = setOf(Iap2WireType.VOID, Iap2WireType.U8, Iap2WireType.I8, Iap2WireType.U16, Iap2WireType.I16,
+        Iap2WireType.U32, Iap2WireType.I32, Iap2WireType.U64, Iap2WireType.GROUP)
+
+    private fun personalOpaque(payload: ByteArray): String =
+        if (readableString(payload) == null && payload.size in intArrayOf(0, 1, 2, 4, 8)) formatOpaque(payload)
+        else "[personal: ${payload.size}B]"
+
     private fun isSecret(name: String) = SECRET_FIELD.containsMatchIn(name)
     private val SECRET_FIELD = Regex("(?i)passphrase|password|secret|privateKey")
 
@@ -105,6 +123,7 @@ object Iap2FrameFormatter {
         depth: Int,
         lines: MutableList<String>,
         secrets: SecretFlag,
+        personal: Boolean = false,
     ) {
         val fields = specs.associateBy(Iap2FieldSpec::id)
         parameters.asList().take(MAX_PARAMETERS).forEach { parameter ->
@@ -114,9 +133,11 @@ object Iap2FrameFormatter {
                 secrets.found = true
                 "[redacted]"
             } else if (field == null) {
-                formatOpaque(parameter.payload)
+                if (personal) personalOpaque(parameter.payload) else formatOpaque(parameter.payload)
+            } else if (personal && field.type !in SCALARS) {
+                "[personal: ${parameter.payload.size}B]"
             } else {
-                formatKnown(parameter.payload, field, depth, secrets)
+                formatKnown(parameter.payload, field, depth, secrets, personal)
             }
             lines += "${indent(depth)}[${parameter.id}] $name: $value"
         }
@@ -130,6 +151,7 @@ object Iap2FrameFormatter {
         spec: Iap2FieldSpec,
         depth: Int,
         secrets: SecretFlag,
+        personal: Boolean,
     ): String = try {
         when (spec.type) {
             Iap2WireType.VOID -> if (payload.isEmpty()) "void" else "void? ${hexPreview(payload)}"
@@ -149,13 +171,13 @@ object Iap2FrameFormatter {
             Iap2WireType.GROUP -> {
                 val nested = Iap2ParameterList.parse(payload)
                 val nestedLines = ArrayList<String>()
-                appendParameters(nested, spec.children, depth + 1, nestedLines, secrets)
+                appendParameters(nested, spec.children, depth + 1, nestedLines, secrets, personal)
                 if (nestedLines.isEmpty()) "{}" else nestedLines.joinToString("\n", prefix = "{\n", postfix = "\n${indent(depth)}}")
             }
             Iap2WireType.OPAQUE -> formatOpaque(payload)
         }
     } catch (_: Exception) {
-        formatOpaque(payload)
+        if (personal) personalOpaque(payload) else formatOpaque(payload)
     }
 
     private fun formatOpaque(payload: ByteArray): String {

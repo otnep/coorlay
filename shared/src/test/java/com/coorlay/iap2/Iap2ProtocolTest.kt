@@ -187,6 +187,28 @@ class Iap2ProtocolTest {
     }
 
     @Test
+    fun formatterLeavesCallersOutOfTheLog() {
+        val frame = Iap2Messages.buildRaw(0x4155) {
+            string(0, "+70001112233")
+            string(1, "Contact Name")
+            u8(2, 4)
+            string(4, "9056C472-6FAC-4676-8F9A-7510140924ED")
+        }
+        val numberHex = "+7000".toByteArray().joinToString(" ") { "%02x".format(it) }
+
+        val formatted = Iap2FrameFormatter.format(Iap2TraceDirection.RX, "wireless", frame)
+
+        assertTrue(formatted, formatted.startsWith("IAP2 RX [wireless] 0x4155 CallStateUpdate"))
+        assertFalse(formatted, "70001112233" in formatted)
+        assertFalse(formatted, "Contact" in formatted)
+        assertFalse(formatted, "9056C472" in formatted)
+        assertFalse(formatted, numberHex in formatted)
+        assertTrue(formatted, "[0] param: [personal: 13B]" in formatted)
+        assertTrue(formatted, "[2] param: u8=4" in formatted)
+        assertTrue(formatted, "raw-body=[redacted: personal data]" in formatted)
+    }
+
+    @Test
     fun formatterFallsBackForMalformedBodies() {
         val formatted = Iap2FrameFormatter.format(
             Iap2TraceDirection.RX,

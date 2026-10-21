@@ -142,6 +142,7 @@ internal class OemHardKeys(
          * opens its screen when it has none.
          */
         const val KEY_CALL = 0x10d
+        const val ACTION_DOWN = 0
         const val ACTION_UP = 1
         const val ACTION_LONG_PRESS = 2
     }
