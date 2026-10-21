@@ -243,7 +243,15 @@ class CarPlayBonjour(
                     val address = requireNotNull(localAdvertisedAddress) {
                         "Interface mDNS requires a local advertised address"
                     }
-                    val dns = JmDNS.create(address, "carplay-${config.deviceId.replace(":", "")}")
+                    val hostName = "carplay-${config.deviceId.replace(":", "")}"
+                    // JmDNS asks an address without a cached name for its host name, a reverse DNS lookup
+                    // that took 20 s on a BYD head unit (DiPlay #972). Name the address; keep the IPv6 scope.
+                    val mdnsAddress = if (address is Inet6Address) {
+                        Inet6Address.getByAddress(hostName, address.address, address.scopeId)
+                    } else {
+                        InetAddress.getByAddress(hostName, address.address)
+                    }
+                    val dns = JmDNS.create(mdnsAddress, hostName)
                     interfaceMdns = dns
                     dns.addServiceListener("$CARPLAY_CONTROL_SERVICE_TYPE.local.", interfaceListener)
                     dns.registerService(ServiceInfo.create(

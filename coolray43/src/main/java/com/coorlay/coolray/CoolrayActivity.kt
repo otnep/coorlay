@@ -21,6 +21,7 @@ import com.coorlay.CoorlayBootstrap
 import com.coorlay.UiText.tr
 import com.coorlay.airplay.*
 import com.coorlay.media.AndroidMediaSink
+import com.coorlay.media.CarPlayTouchMapper
 import com.coorlay.network.CarPlayVpnService
 import com.coorlay.orchestration.*
 import com.coorlay.transport.Iap2IdentificationConfig
@@ -105,7 +106,8 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
                 }
             } else if (intent?.action == OEM_CALL_STATE) {
                 // With the stock Bluetooth kept, this shows whether a call runs on the head unit's phone (HFP) or in CarPlay.
-                log("OEM call state=${intent.getIntExtra("callstate", -1)} carPlay=${controller != null && videoActive} " +
+                oemCallState = intent.getIntExtra("callstate", -1)
+                log("OEM call state=$oemCallState carPlay=${controller != null && videoActive} " +
                     "audio: ${oemAudioState()}", display = false)
             } else if (intent?.action == BluetoothAdapter.ACTION_STATE_CHANGED) {
                 log("BT STATE broadcast previous=${intent.getIntExtra(BluetoothAdapter.EXTRA_PREVIOUS_STATE, -1)} " +
@@ -308,10 +310,40 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
             modeCycle.modePressed()
             lastModePressAt = SystemClock.uptimeMillis()
         }
+        if (key == OemHardKeys.KEY_CALL) {
+            onCallKey(action)
+            return
+        }
         val button = wheelKeys.mediaButton(key, action)
         val sent = button?.let { controller?.sendMediaButton(it) }
         log("HARDKEY key=0x${Integer.toHexString(key)} action=$action" +
             (button?.let { " -> CarPlay media=$it sent=${sent == true}" } ?: ""), display = false)
+    }
+    /** Last com.neusoft.geely.callstatechanged value: non-zero while the stock phone has a Bluetooth (HFP) call. */
+    @Volatile private var oemCallState = 0
+    /**
+     * The wheel's phone key during a CarPlay call: a short press answers a ringing call and ends any other.
+     * The stock Bluetooth phone gets the key as well; with no HFP call of its own it opens its screen over
+     * CarPlay (user, 2026-10-21: «the call keys switch to Bluetooth»), so coorlay comes back to the front.
+     * An HFP call is the stock phone's: then it alone handles the key, as before.
+     */
+    private fun onCallKey(action: Int) {
+        val short = wheelKeys.shortPress(OemHardKeys.KEY_CALL, action)
+        val active = controller
+        val phase = active?.callPhase()
+        if (!short || active == null || !videoActive || phase == null || oemCallState != 0) {
+            log("HARDKEY key=0x${Integer.toHexString(OemHardKeys.KEY_CALL)} action=$action" +
+                (if (short) " CarPlay call=${phase ?: "none"} oemCall=$oemCallState: left to the head unit" else ""), display = false)
+            return
+        }
+        val answer = phase == com.coorlay.media.CarPlayCallState.Phase.RINGING
+        val sent = if (answer) active.answerCall() else active.endCall()
+        log("HARDKEY key=0x${Integer.toHexString(OemHardKeys.KEY_CALL)} action=$action call=$phase -> CarPlay " +
+            "${if (answer) "answer" else "end call"} sent=$sent", display = false)
+        // The stock phone opens its screen on the same release; its start takes a moment on this unit.
+        for (delay in CALL_KEY_RETURN_DELAYS_MS) handler.postDelayed({
+            if (!destroyed && controller === active && !resumed) bringToFront()
+        }, delay)
     }
     /** Ordinary Android media keys (other firmwares, USB/Bluetooth remotes). */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -1251,6 +1283,7 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
                     clusterMedia = media
                     receiver.nowPlayingListener = { nowPlaying -> media.update(nowPlaying) }
                 }
+                receiver.callListener = { phase -> log("CALL CarPlay phase=${phase ?: "none"}", display = false) }
                 if (clusterNavigation != null || clusterMedia != null) {
                     runOnUiThread { handler.removeCallbacks(clusterTick); handler.postDelayed(clusterTick, 1000) }
                 }
@@ -1333,13 +1366,9 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
         if (destroyed) Thread(restore, "coorlay-bt-on").apply { isDaemon = true; start() } else bluetoothEnableTasks.execute(restore)
     }
     private fun sendTouch(view: View, event: MotionEvent) {
-        val up = event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL
-        val contacts = (0 until minOf(event.pointerCount, 2)).map { index ->
-            AirPlayContact(event.getPointerId(index), (event.getX(index) / view.width).toDouble().coerceIn(0.0, 1.0),
-                (event.getY(index) / view.height).toDouble().coerceIn(0.0, 1.0),
-                !up && !(event.actionMasked == MotionEvent.ACTION_POINTER_UP && event.actionIndex == index))
-        }
-        controller?.sendTouch(contacts)
+        // Every pointer goes along: the session keeps each finger in its slot (a pinch whose first finger
+        // lifted moved the second into slot 0 and released slot 1 at the corner, DiPlay #912).
+        controller?.sendTouch(CarPlayTouchMapper.contacts(event, view.width, view.height))
     }
     private fun statusLabel(value: CarPlayStatus): String = when (value) {
         CarPlayStatus.WaitingForIphone -> tr("Android не видит USB-устройство Apple. Переподключите USB и откройте журнал.",
@@ -1606,6 +1635,8 @@ private const val BT_OFF_DELAY_MS = 3000L
 internal const val BT_OFF_BY_COORLAY = "bluetoothOffByCoorlay"
 /** A source change or focus loss this soon after a MODE press is the driver's own choice. */
 private const val MODE_CHOICE_WINDOW_MS = 10_000L
+/** After the wheel's phone key in a CarPlay call: when to check that the stock phone screen did not stay on top. */
+private val CALL_KEY_RETURN_DELAYS_MS = longArrayOf(700L, 2000L)
 /** After returning to CarPlay: no music stream by then means the iPhone stayed paused. */
 private const val RESUME_CHECK_DELAY_MS = 2500L
 /** Whether the OEM player actually yielded only shows a moment after the return. */

@@ -34,8 +34,10 @@ class LegacyAudioNegotiationTest {
         val formats = (info(opus = true)["audioFormats"] as List<*>).map { it as Map<*, *> }
         for (audioType in listOf("default", "telephony", "speechRecognition")) {
             val format = formats.first { it["type"] == 100 && it["audioType"] == audioType }
-            assertEquals(0x70000000, (format["audioOutputFormats"] as Int) and 0x70000000)
-            assertEquals(0x70000000, (format["audioInputFormats"] as Int) and 0x70000000)
+            // Siri gets 16 kHz Opus only: 24/48 kHz needs the 48 kHz software decode, too slow on the unit.
+            val opus = if (audioType == "speechRecognition") 0x10000000 else 0x70000000
+            assertEquals(opus, (format["audioOutputFormats"] as Int) and 0x70000000)
+            assertEquals(opus, (format["audioInputFormats"] as Int) and 0x70000000)
             // PCM stays offered next to Opus.
             assertTrue((format["audioInputFormats"] as Int) and 0x154 != 0)
         }

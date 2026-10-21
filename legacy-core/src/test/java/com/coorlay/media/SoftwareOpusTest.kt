@@ -84,4 +84,19 @@ class SoftwareOpusTest {
         val rtp = ByteArray(12) + packet
         assertEquals(1920, SoftwareOpusDecoder(48_000, 1).decode(rtp, 12, packet.size))
     }
+
+    @Test
+    fun aFailedConcentusCheckResetsTheCodecAndReachesTheCallerAsAnException() {
+        var resets = 0
+        val error = try {
+            checked({ resets++ }) { throw AssertionError("corr_QC[0] >= 0") }
+            null
+        } catch (caught: Exception) {
+            caught
+        }
+        assertTrue(error is IllegalStateException && error.cause is AssertionError)
+        assertEquals(1, resets)
+        assertEquals(7, checked({ resets++ }) { 7 })
+        assertEquals(1, resets)
+    }
 }

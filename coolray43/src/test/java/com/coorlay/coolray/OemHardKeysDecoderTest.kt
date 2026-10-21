@@ -24,6 +24,16 @@ class OemHardKeysDecoderTest {
         assertEquals(CarPlayMediaButton.NEXT, decoder.mediaButton(OemHardKeys.KEY_NEXT, 1))
     }
 
+    @Test fun callKeyActsOnShortReleaseOnly() {
+        val decoder = OemHardKeys.Decoder()
+        assertEquals(false, decoder.shortPress(OemHardKeys.KEY_CALL, 0))
+        assertEquals(true, decoder.shortPress(OemHardKeys.KEY_CALL, 1))
+        decoder.shortPress(OemHardKeys.KEY_CALL, 0)
+        assertEquals(false, decoder.shortPress(OemHardKeys.KEY_CALL, 2))
+        assertEquals(false, decoder.shortPress(OemHardKeys.KEY_CALL, 1))
+        assertNull(decoder.mediaButton(OemHardKeys.KEY_CALL, 1))
+    }
+
     @Test fun otherWheelKeysAreIgnored() {
         assertNull(OemHardKeys.Decoder().mediaButton(0x18, 1))
     }

@@ -205,11 +205,14 @@ class CarPlayController(
     private var clusterUiStream: Pair<AirPlaySession, Int>? = null
     private var clusterUiShown = true
     private val playbackStatus = com.coorlay.media.CarPlayPlaybackStatus()
+    private val callState = com.coorlay.media.CarPlayCallState()
 
     /** Told when the iPhone starts or stops playing media; may run on any thread. */
     @Volatile var playbackListener: ((Boolean) -> Unit)? = null
     /** The iPhone's now-playing title, artist, album and position when they change; may run on any thread. */
     @Volatile var nowPlayingListener: ((com.coorlay.media.CarPlayNowPlaying) -> Unit)? = null
+    /** The iPhone's call phase when it changes (null: no call); may run on any thread. */
+    @Volatile var callListener: ((com.coorlay.media.CarPlayCallState.Phase?) -> Unit)? = null
     /** iAP2 route guidance (0x5201/0x5202) for the head unit's own cluster/HUD outputs. */
     @Volatile var routeListener: ((com.coorlay.iap2.wire.Iap2Frame) -> Unit)? = null
 
@@ -279,6 +282,7 @@ class CarPlayController(
                 videoListener?.onVideoSessionEnded()
                 synchronized(playbackStatus) { playbackStatus.clear() }?.let { playing -> playbackListener?.invoke(playing) }
                 synchronized(playbackStatus) { playbackStatus.clearAll() }?.let { empty -> nowPlayingListener?.invoke(empty) }
+                if (synchronized(callState) { callState.clear() }) callListener?.invoke(null)
             }
             debugLog("AirPlay session ended peer=${session.host}")
             uiListener?.onSessionEnded(session)
@@ -495,6 +499,26 @@ class CarPlayController(
         }
     }
 
+    /** The iPhone's current call phase from iAP2 CallStateUpdate, null without a call. */
+    fun callPhase(): com.coorlay.media.CarPlayCallState.Phase? = synchronized(callState) { callState.phase }
+
+    /** Answers the ringing call (telephony Hook Switch), as the wheel's call key does in CarPlay. */
+    fun answerCall(): Boolean = sendTelephony(TELEPHONY_HOOK_SWITCH)
+
+    /** Ends the current call or declines the ringing one (telephony Drop). */
+    fun endCall(): Boolean = sendTelephony(TELEPHONY_DROP)
+
+    private fun sendTelephony(index: Int): Boolean {
+        if (closed) return false
+        val session = activeSession ?: return false
+        return try {
+            touchExecutor.execute { session.sendTelephony(index) }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     override fun close() {
         synchronized(this) {
             if (closed) return
@@ -583,6 +607,11 @@ class CarPlayController(
             }
             playingChange?.let { playing -> playbackListener?.invoke(playing) }
             nowPlaying?.let { nowPlayingListener?.invoke(it) }
+        }
+        if (frame.messageId == com.coorlay.media.CarPlayCallState.CALL_STATE_UPDATE) {
+            var changed = false
+            val phase = synchronized(callState) { changed = callState.accept(frame); callState.phase }
+            if (changed) callListener?.invoke(phase)
         }
         if (frame.messageId == ROUTE_GUIDANCE_UPDATE || frame.messageId == ROUTE_GUIDANCE_MANEUVER_UPDATE) {
             routeListener?.invoke(frame)
@@ -2377,6 +2406,9 @@ class CarPlayController(
         private const val MDNS_PORT = 5353
         private const val ROUTE_GUIDANCE_UPDATE = 0x5201
         private const val ROUTE_GUIDANCE_MANEUVER_UPDATE = 0x5202
+        /** Indices into AirPlayHid's telephony descriptor: Hook Switch (0x20) and Drop (0x26). */
+        private const val TELEPHONY_HOOK_SWITCH = 1
+        private const val TELEPHONY_DROP = 3
         private const val MDNS_BIND_ATTEMPTS = 4
         private const val MDNS_RETRY_DELAY_MS = 800L
         private const val RESOURCE_MAIN_AUDIO = 2

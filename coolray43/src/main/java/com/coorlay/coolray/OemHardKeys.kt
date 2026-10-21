@@ -112,11 +112,14 @@ internal class OemHardKeys(
                 KEY_PLAY_PAUSE -> CarPlayMediaButton.PLAY_PAUSE
                 else -> return null
             }
-            return when (action) {
-                ACTION_LONG_PRESS -> { longPressed = keyCode; null }
-                ACTION_UP -> if (longPressed == keyCode) { longPressed = -1; null } else button
-                else -> null
-            }
+            return if (shortPress(keyCode, action)) button else null
+        }
+
+        /** True on the release of a short press of [keyCode]; a long press is left to the firmware. */
+        fun shortPress(keyCode: Int, action: Int): Boolean = when (action) {
+            ACTION_LONG_PRESS -> { longPressed = keyCode; false }
+            ACTION_UP -> if (longPressed == keyCode) { longPressed = -1; false } else true
+            else -> false
         }
     }
 
@@ -133,6 +136,12 @@ internal class OemHardKeys(
         const val KEY_PLAY_PAUSE = 0x10b
         /** Steering-wheel MODE: the firmware switches to its next audio source. */
         const val KEY_MODE = 0xef
+        /**
+         * The wheel's phone key (ecarx KeyInput KEYCODE_R_CALL; no separate end-call code exists). The stock
+         * Bluetooth phone (KC2_btphoneApp) gets it too: on release it answers or ends its own HFP call, or
+         * opens its screen when it has none.
+         */
+        const val KEY_CALL = 0x10d
         const val ACTION_UP = 1
         const val ACTION_LONG_PRESS = 2
     }

@@ -142,6 +142,10 @@ object AirPlayInfoPlist {
         val aacLc = if (is48) 0x800000 else 0x400000
         val pcmInput = if (microphone) pcmMono else null
         val wirelessInput = if (microphone) pcmMono or opus else null
+        // Siri took 24/48 kHz Opus, which only decodes correctly at 48 kHz in software and lagged on this CPU
+        // (up to 92 ms per 20 ms packet, 2026-10-14); 16 kHz Opus decodes at its own rate, like navigation.
+        val siriOpus = if (opusAudio) 0x10000000 else 0
+        val siriInput = if (microphone) pcmMono or siriOpus else null
         // AAC-LC stereo next to PCM for music/system sounds; the iPhone picks one per stream.
         val mainOut = if (compressed) pcm or aacLc else pcm
 
@@ -152,7 +156,7 @@ object AirPlayInfoPlist {
             format(100, "alert", mainOut or opus),
             format(100, "media", mainOut),
             format(100, "telephony", pcmMono or opus, wirelessInput),
-            format(100, "speechRecognition", pcmMono or opus, wirelessInput),
+            format(100, "speechRecognition", pcmMono or siriOpus, siriInput),
             format(101, "default", mainOut or opus),
             format(102, "media", aacLc),
         ) + if (mainBuffered) {

@@ -10,6 +10,19 @@ import org.concentus.OpusSignal
  * Opus codec. Wireless CarPlay needs Opus: offered only PCM, the iPhone sets up no CarPlay audio over
  * Wi-Fi and falls back to Bluetooth (DiPlay ea898e3). Free of Android types so it runs on the JVM.
  */
+
+/**
+ * Concentus checks the reference library's debug assertions in every build and throws AssertionError, an
+ * Error that got past the callers' catch (Exception) and ended the app (DiPlay #865: a WhatsApp voice
+ * message on an Android 8.1 head unit). A failed check now costs one frame: the codec starts the next one
+ * from a clean state, and the caller sees an ordinary exception.
+ */
+internal inline fun <T> checked(reset: () -> Unit, block: () -> T): T = try {
+    block()
+} catch (error: AssertionError) {
+    runCatching(reset)
+    throw IllegalStateException("Opus internal check failed", error)
+}
 class SoftwareOpusEncoder(
     /** Capture rate fed to the encoder: 8, 12, 16, 24 or 48 kHz; Opus resamples internally. */
     val sampleRate: Int,
@@ -30,7 +43,7 @@ class SoftwareOpusEncoder(
     /** Encodes one 20 ms little-endian 16-bit mono frame into one Opus packet. */
     fun encode(pcm: ByteArray): ByteArray {
         require(pcm.size == frameBytes) { "Opus frame must be $frameBytes bytes, got ${pcm.size}" }
-        val length = encoder.encode(pcm, 0, frameSamples, output, 0, output.size)
+        val length = checked(encoder::resetState) { encoder.encode(pcm, 0, frameSamples, output, 0, output.size) }
         return output.copyOf(length)
     }
 
@@ -61,13 +74,13 @@ class SoftwareOpusDecoder(val sampleRate: Int, val channels: Int) {
      * the next call).
      */
     fun decode(packet: ByteArray, offset: Int, length: Int): Int =
-        toPcm(decoder.decode(packet, offset, length, samples, 0, MAX_FRAME_SAMPLES, false))
+        toPcm(checked(decoder::resetState) { decoder.decode(packet, offset, length, samples, 0, MAX_FRAME_SAMPLES, false) })
 
     /**
      * Opus packet-loss concealment for one lost 20 ms packet; returns the PCM bytes in [output]. A lost
      * packet otherwise left 20 ms of nothing, heard as a click in a navigation prompt.
      */
-    fun conceal(): Int = toPcm(decoder.decode(null, 0, 0, samples, 0, sampleRate / 50, false))
+    fun conceal(): Int = toPcm(checked(decoder::resetState) { decoder.decode(null, 0, 0, samples, 0, sampleRate / 50, false) })
 
     private fun toPcm(decoded: Int): Int {
         val count = decoded * channels

@@ -519,6 +519,28 @@ internal fun pcmAudible(bytes: ByteArray, length: Int = bytes.size, threshold: I
     return false
 }
 
+/**
+ * Multiplies 16-bit little-endian PCM in place by [gain]. Above [PCM_KNEE] the rest of the range up to twice
+ * full scale is squeezed into the headroom, so loud syllables flatten instead of clipping hard.
+ */
+internal fun applyPcmGain(bytes: ByteArray, offset: Int, length: Int, gain: Float) {
+    var cursor = offset
+    val end = offset + length
+    while (cursor + 1 < end) {
+        val sample = (bytes[cursor].toInt() and 0xff) or (bytes[cursor + 1].toInt() shl 8)
+        var scaled = (sample * gain).toInt()
+        val magnitude = if (scaled < 0) -scaled else scaled
+        if (magnitude > PCM_KNEE) {
+            val squeezed = minOf(32767, PCM_KNEE + (magnitude - PCM_KNEE) * (32767 - PCM_KNEE) / (65534 - PCM_KNEE))
+            scaled = if (scaled < 0) -squeezed else squeezed
+        }
+        bytes[cursor] = scaled.toByte(); bytes[cursor + 1] = (scaled shr 8).toByte()
+        cursor += 2
+    }
+}
+
+private const val PCM_KNEE = 24576
+
 /** The 7-byte MPEG-4 ADTS header of [MediaCodecSupport.adtsFrame], written into [target] without a new array. */
 internal fun writeAdtsHeader(target: ByteArray, accessUnitSize: Int, sampleRate: Int, channels: Int) {
     val frequencyIndex = MediaCodecSupport.aacFrequencyIndex(sampleRate)
@@ -552,6 +574,20 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
     private var opusErrors = 0
     private val rate = format.decodeRate
     private val aac = format.codec == AudioCodecKind.AAC_LC
+    /** Music and Opus voice pause and rebuild their reserve when the track runs dry instead of crackling. */
+    private val rebuffering = aac || format.codec == AudioCodecKind.OPUS
+    private val stepMs = if (aac) MUSIC_STEP_MS else VOICE_STEP_MS
+    private val maxMs = if (aac) MUSIC_MAX_MS else VOICE_MAX_MS
+    /**
+     * Siri's reply comes much quieter than music and the car adds no voice gain of its own (user, 2026-10-18);
+     * so does the other party in a call (user, 2026-10-21). Both play on the music volume, not the stock
+     * phone's own call volume.
+     */
+    private val gain = when {
+        format.audioType.equals("speechRecognition", ignoreCase = true) -> SIRI_GAIN
+        format.audioType.equals("telephony", ignoreCase = true) -> CALL_GAIN
+        else -> 1f
+    }
     /**
      * Prompts, Siri and calls arrive unbuffered (audioLatencyMs 80). Started on the first 20 ms packet,
      * the track ran dry on every late packet or slow decode and the navigation voice crackled (0.0.45b-9),
@@ -559,6 +595,8 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
      * Wi-Fi gap of 0.4-1.5 s was heard (2026-10-12): it waits for [MUSIC_START_MS], and after the track ran dry
      * while packets kept coming, for [MUSIC_STEP_MS] more each time, up to [MUSIC_MAX_MS]. Siri's 24 kHz Opus
      * decodes at 48 kHz (see AudioFormat.decodeRate), which costs the CPU more: [OPUS_48K_PREBUFFER_MS].
+     * Opus voice ran dry on decode stalls and Siri still lagged (2026-10-18): it rebuilds its reserve the same
+     * way, [VOICE_STEP_MS] more each time up to [VOICE_MAX_MS].
      */
     private var targetMs = when {
         aac -> MUSIC_START_MS
@@ -584,6 +622,10 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
     @Volatile private var statsMaxGapNs = 0L
     @Volatile private var statsMaxQueue = 0
     @Volatile private var statsMaxWriteNs = 0L
+    // Signal level before [gain], to compare Siri with music: sum of squares, samples and peak.
+    @Volatile private var statsSquares = 0.0
+    @Volatile private var statsSamples = 0L
+    @Volatile private var statsPeak = 0
     @Volatile private var lastPacketNs = 0L
     private var statsWindowNs = System.nanoTime()
     fun packet(rtp: ByteArray, sample: Int) {
@@ -595,17 +637,34 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
         if (!packets.offer(rtp to sample)) report("Audio receive queue overflow")
         statsMaxQueue = maxOf(statsMaxQueue, packets.size)
     }
-    private fun reportStatsIfDue() {
+    /** [final]: the stream ended; Siri replies and prompts are shorter than one five-second window. */
+    private fun reportStatsIfDue(final: Boolean = false) {
         val now = System.nanoTime()
         val elapsed = now - statsWindowNs
-        if (elapsed < 5_000_000_000L) return
+        if (elapsed < 5_000_000_000L && !final) return
         if (statsPackets > 0) report("audio stats ${format.audioType} rx=%.1fpps maxGap=%dms queueMax=%d writeMax=%dms".format(
             java.util.Locale.US, statsPackets / (elapsed / 1e9), statsMaxGapNs / 1_000_000, statsMaxQueue, statsMaxWriteNs / 1_000_000) +
             (if (opus != null) " opusDecodeMax=%.1fms concealed=%d dropped=%d".format(java.util.Locale.US,
                 statsMaxDecodeNs / 1e6, statsConcealed, statsDropped) else "") +
-            (if (aac) " reserve=%dms rebuffers=%d".format(java.util.Locale.US, targetMs, statsRebuffers) else ""))
+            (if (rebuffering) " reserve=%dms rebuffers=%d".format(java.util.Locale.US, targetMs, statsRebuffers) else "") +
+            (if (statsSamples > 0) " level rms=%.1fdBFS peak=%.1fdBFS gain=%.1f".format(java.util.Locale.US,
+                dbfs(Math.sqrt(statsSquares / statsSamples)), dbfs(statsPeak.toDouble()), gain) else "") +
+            (if (final) " final" else ""))
         statsWindowNs = now; statsPackets = 0; statsMaxGapNs = 0; statsMaxQueue = 0; statsMaxWriteNs = 0; statsMaxDecodeNs = 0
-        statsConcealed = 0; statsDropped = 0; statsRebuffers = 0
+        statsConcealed = 0; statsDropped = 0; statsRebuffers = 0; statsSquares = 0.0; statsSamples = 0; statsPeak = 0
+    }
+    private fun dbfs(value: Double) = if (value <= 0.0) -99.0 else 20 * Math.log10(value / 32768.0)
+    private fun measure(bytes: ByteArray, start: Int, length: Int) {
+        var squares = 0.0; var peak = statsPeak
+        var cursor = start
+        val end = start + length
+        while (cursor + 1 < end) {
+            val sample = (bytes[cursor].toInt() and 0xff) or (bytes[cursor + 1].toInt() shl 8)
+            squares += sample.toDouble() * sample
+            if (sample > peak) peak = sample else if (-sample > peak) peak = -sample
+            cursor += 2
+        }
+        statsSquares += squares; statsSamples += length / 2; statsPeak = peak
     }
     private fun run() {
         report(StreamThreadPriority.audio())
@@ -616,7 +675,7 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
             // The buffer stays 200 ms above the prebuffer (music: its largest target), so writes before play()
             // never block.
             val audio = AudioTrack(AudioManager.STREAM_MUSIC, rate, channels, PcmFormat.ENCODING_PCM_16BIT,
-                maxOf(minimum * 2, bytesFor((if (aac) MUSIC_MAX_MS else targetMs) + 200)), AudioTrack.MODE_STREAM)
+                maxOf(minimum * 2, bytesFor((if (rebuffering) maxMs else targetMs) + 200)), AudioTrack.MODE_STREAM)
             track = audio
             check(audio.state == AudioTrack.STATE_INITIALIZED) { "AudioTrack did not initialize" }
             focus.acquire(audio, music)
@@ -640,17 +699,17 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
                 if (packet != null) {
                     lastTakenNs = now
                     if (dryAtNs != 0L) {
-                        // Packets still come: the track ran dry in a gap, so music keeps a larger reserve.
-                        if (now - dryAtNs < DRY_GAP_NS && targetMs < MUSIC_MAX_MS) {
-                            targetMs = minOf(targetMs + MUSIC_STEP_MS, MUSIC_MAX_MS); prebufferBytes = bytesFor(targetMs)
-                            report("Music buffer ran dry; reserve now ${targetMs}ms")
+                        // Packets still come: the track ran dry in a gap, so the stream keeps a larger reserve.
+                        if (now - dryAtNs < DRY_GAP_NS && targetMs < maxMs) {
+                            targetMs = minOf(targetMs + stepMs, maxMs); prebufferBytes = bytesFor(targetMs)
+                            report("Audio ${format.audioType} buffer ran dry; reserve now ${targetMs}ms")
                         }
                         dryAtNs = 0L
                     }
                 }
                 // A short chime or the end of a prompt: play what is there instead of waiting for more.
                 else if (!playing && pendingBytes > 0 && now - lastTakenNs > (if (aac) MUSIC_IDLE_START_NS else IDLE_START_NS)) startPlayback()
-                if (aac && playing) checkDry(now)
+                if (rebuffering && playing) checkDry(now)
                 if (packet != null && packet.first.size > RTP_HEADER) {
                     // The payload is used in place after the 12-byte RTP header.
                     val rtp = packet.first
@@ -702,6 +761,7 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
             }
         } catch (_: InterruptedException) { } catch (error: Exception) { report("Audio error: ${error.message}") }
         finally {
+            runCatching { reportStatsIfDue(final = true) }
             val old = codec; codec = null; runCatching { old?.stop() }; runCatching { old?.release() }
             track?.let { focus.release(it); runCatching { it.stop() }; runCatching { it.release() } }
             track = null
@@ -728,6 +788,8 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
     }
     private fun write(bytes: ByteArray, start: Int, length: Int) {
         if (music && focus.parked && pcmAudible(bytes, length, offset = start)) focus.musicAudible()
+        measure(bytes, start, length)
+        if (gain != 1f) applyPcmGain(bytes, start, length, gain)
         val started = System.nanoTime()
         val end = start + length
         var offset = start
@@ -743,7 +805,7 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
             if (pendingBytes >= prebufferBytes) startPlayback()
         }
     }
-    /** Music only: a track with nothing left is paused until the reserve has built up again. */
+    /** Music and Opus voice: a track with nothing left is paused until the reserve has built up again. */
     private fun checkDry(now: Long) {
         val audio = track ?: return
         val played = audio.playbackHeadPosition.toLong() and 0xffffffffL
@@ -773,6 +835,16 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
         const val MUSIC_START_MS = 300
         const val MUSIC_STEP_MS = 150
         const val MUSIC_MAX_MS = 800
+        /** Opus voice reserve: step after each dry track that was a gap, and ceiling. */
+        const val VOICE_STEP_MS = 100
+        const val VOICE_MAX_MS = 500
+        /** About +6 dB; the level in the stats line shows how far Siri sits below music. */
+        const val SIRI_GAIN = 2f
+        /**
+         * About +9.5 dB: call audio is levelled for a handset earpiece (around -26 dBFS speech), well below Siri
+         * and music; the soft knee in [applyPcmGain] takes the louder syllables.
+         */
+        const val CALL_GAIN = 3f
         /** Music starts with less than its reserve only after this long without a packet. */
         const val MUSIC_IDLE_START_NS = 1_000_000_000L
         /** A packet within this time after the track ran dry: a gap in arrival, not the iPhone pausing. */
