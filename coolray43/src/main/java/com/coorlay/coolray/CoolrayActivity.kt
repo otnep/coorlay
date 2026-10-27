@@ -23,6 +23,7 @@ import com.coorlay.airplay.*
 import com.coorlay.media.AndroidMediaSink
 import com.coorlay.media.CarPlayTouchMapper
 import com.coorlay.network.CarPlayVpnService
+import com.coorlay.network.WifiP2pGroupManager
 import com.coorlay.orchestration.*
 import com.coorlay.transport.Iap2IdentificationConfig
 import com.coorlay.transport.LegacyUsbNative
@@ -621,8 +622,14 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
         }
         val close = tr("Закрыть", "Close") to { endWirelessFlow(); stopSession(releaseHotspot = true) }
         if (kind == WirelessFailure.WIFI_DIRECT) {
-            progress.failed(tr("Wi-Fi Direct не включился на этой магнитоле. Выключите его, чтобы подключаться через точку доступа.",
-                "Wi-Fi Direct did not turn on on this head unit. Turn it off to connect through the hotspot."),
+            // H50 firmware (issue #2): no Wi-Fi Direct feature at all, the usual root fix does not help there.
+            progress.failed(if (!WifiP2pGroupManager.featureDeclared(this))
+                    tr("В прошивке этой магнитолы нет Wi-Fi Direct. Выключите его, чтобы подключаться через точку доступа. " +
+                        "Добавить Wi-Fi Direct можно флешкой coorlay-usb-wifi-direct-enable (инструкция ROOT-INSTALL).",
+                        "This head-unit firmware has no Wi-Fi Direct. Turn it off to connect through the hotspot. " +
+                        "The coorlay-usb-wifi-direct-enable stick can add Wi-Fi Direct (ROOT-INSTALL guide).")
+                else tr("Wi-Fi Direct не включился на этой магнитоле. Выключите его, чтобы подключаться через точку доступа.",
+                    "Wi-Fi Direct did not turn on on this head unit. Turn it off to connect through the hotspot."),
                 close, tr("Выключить Wi-Fi Direct", "Turn off Wi-Fi Direct") to {
                     prefs.edit().putBoolean(WIFI_DIRECT, false).apply()
                     log("Driver turned Wi-Fi Direct off after its failure; retrying over the hotspot", display = false)

@@ -22,7 +22,7 @@
 
 ## Безопасность: штатная магнитола, CommunityFull, любая другая
 
-Скрипт (версия 5) рассчитан на то, что флешку могут вставить куда угодно.
+Скрипт (версия 7) рассчитан на то, что флешку могут вставить куда угодно.
 
 | Магнитола | Что сделает скрипт |
 |---|---|
@@ -38,14 +38,17 @@
   `05.05.*`–`05.07.*` (CommunityFull-магнитола с 05.05.10600 подходит).
   Иначе не ставится даже APK.
 - **Только известная ошибка.** Ссылка `/data/misc/wifi/sockets/p2p0`
-  создаётся, лишь если и шаблон `/system/etc/wifi/wpa_supplicant.conf`, и сам
-  `p2p_supplicant.conf` содержат ровно заводскую строку
-  `ctrl_interface=DIR=/data/system/wpa_supplicant GROUP=wifi`. Любое другое
-  значение (мод, другая прошивка) не трогается. Сам `p2p_supplicant.conf`
+  создаётся, лишь если шаблон `/system/etc/wifi/wpa_supplicant.conf` содержит
+  ровно заводскую строку — `ctrl_interface=DIR=/data/system/wpa_supplicant GROUP=wifi`
+  (H30) или `ctrl_interface=/data/system/wpa_supplicant` (H50), — а
+  `p2p_supplicant.conf` либо ещё не создан, либо совпадает с шаблоном. Любое
+  другое значение (мод, другая прошивка) не трогается. Сам `p2p_supplicant.conf`
   версия 4 не меняет.
-- **/system не трогается, перезагрузки нет.** Если в прошивке нет
-  `android.hardware.wifi.direct.xml`, скрипт сообщает об этом и ничего не
-  меняет (прежние версии дописывали файл в /system и перезагружали ГУ).
+- **Перезагрузки нет; /system — только по отдельному флагу.** Если в прошивке
+  нет `android.hardware.wifi.direct.xml`, обычная флешка сообщает об этом и
+  ничего не меняет. Файл добавляет только флешка
+  `coorlay-usb-wifi-direct-enable` (`ENABLE_WIFI_DIRECT_FEATURE=1`, см. «Прошивки
+  без Wi-Fi Direct (H50)»).
 - **Исправление версии 3 убирается.** Версия 3 меняла `ctrl_interface` в
   `p2p_supplicant.conf`, и из-за этого ломался весь Wi-Fi-клиент ГУ (см.
   «Почему не работал Wi-Fi Direct»). Версия 4 возвращает исходный файл из
@@ -97,7 +100,9 @@
 |---|---|---|
 | Установить/обновить coorlay **и** исправить Wi-Fi Direct | `UsbStick-Full.cmd` | `.\Prepare-UsbStick.ps1 -Drive E:` |
 | **Только** исправить Wi-Fi Direct (coorlay уже стоит, его не трогать) | `UsbStick-WifiDirect-Only.cmd` | `.\Prepare-UsbStick.ps1 -Drive E: -Mode WifiDirect` |
-| Отменить исправление Wi-Fi Direct | — | `.\Prepare-UsbStick.ps1 -Drive E: -Mode Restore` |
+| Добавить в прошивку файл Wi-Fi Direct (H50) и исправить Wi-Fi Direct; пишет в /system | `UsbStick-WifiDirect-Enable.cmd` | `.\Prepare-UsbStick.ps1 -Drive E: -Mode WifiDirectEnable` |
+| Отменить исправление Wi-Fi Direct (и убрать добавленный coorlay файл) | — | `.\Prepare-UsbStick.ps1 -Drive E: -Mode Restore` |
+| Только скопировать штатные `KC2_popview`, `KC2_btphoneApp`, `KC2_btphone` и `/system/framework` на флешку (для патчей MODE и кнопки звонка; магнитола не меняется) | `UsbStick-Dump-SystemApps.cmd` | `.\Prepare-UsbStick.ps1 -Drive E: -Mode Dump` |
 
 Файлы `.cmd` спросят букву флешки (`Drive:` — введите, например, `E:`).
 В режимах `WifiDirect` и `Restore` APK на флешку не кладётся, а
@@ -146,7 +151,9 @@ E:\
 |---|---|---|
 | `INSTALL_APP` | 1 | Установить/обновить coorlay из APK в папке `coorlay` |
 | `FIX_WIFI_DIRECT` | 1 | Исправить `p2p_supplicant.conf` (с резервной копией) |
-| `RESTORE_WIFI_DIRECT` | 0 | Вернуть исходный `p2p_supplicant.conf` (поставьте вместе с `FIX_WIFI_DIRECT=0`) |
+| `RESTORE_WIFI_DIRECT` | 0 | Вернуть исходный `p2p_supplicant.conf`, убрать ссылку и файл Wi-Fi Direct, если его добавил coorlay (поставьте вместе с `FIX_WIFI_DIRECT=0`) |
+| `ENABLE_WIFI_DIRECT_FEATURE` | 0 | Добавить `/system/etc/permissions/android.hardware.wifi.direct.xml`, если его нет, а остальное для Wi-Fi Direct в прошивке есть. Пишет в /system; действует после выключения и включения зажигания |
+| `DUMP_SYSTEM_APPS` | 0 | Скопировать штатные popview/btphoneApp/btphone (`.apk`, `.odex`, dalvik-cache), `/system/framework` (около 40 МБ), их записи из `packages.xml` и сведения о прошивке в `coorlay\dump\<прошивка>-<дата>` на флешке. Только чтение |
 | `RUN_ONCE` | 1 | После работы переименовать папку-триггер в `_b832…`, чтобы скрипт не запускался при каждом включении |
 | `ANY_HEAD_UNIT` | 0 | Только для проверки на эмуляторе: пропустить опознание Coolray (проверки известной ошибки остаются) |
 
@@ -197,6 +204,13 @@ E:\
   включена точка доступа ГУ или выключен Wi-Fi; исправление вступит в силу,
   когда coorlay включит Wi-Fi Direct;
 - `pm install -r: … Success`, `after: versionName=…` — coorlay установлен;
+- `--- Wi-Fi hardware and firmware (read only)` — при каждом запуске: файлы
+  `permissions`, строки supplicant/p2p/hostapd из `/init*.rc`, бинарники
+  supplicant'а (есть ли в них код P2P), сетевые интерфейсы, драйвер `wlan0`,
+  модули ядра, свойства Wi-Fi, опции монтирования `/system`;
+- `Wi-Fi Direct feature: added …` / `not added` (с причиной) / `already
+  declared` — флешка `wifi-direct-enable`; `RESTART NEEDED` — выключите и
+  включите зажигание;
 - `DONE: everything succeeded` или `DONE WITH ERRORS`.
 
 Пришлите этот файл, если что-то пошло не так.
@@ -238,6 +252,49 @@ E:\
   настройка, `/system` не меняется; откат (`RESTORE_WIFI_DIRECT=1`) ставит
   обратно 60000. coorlay показывает его в диагностике Wi-Fi
   (`Wi-Fi client scan interval during Wi-Fi Direct=`).
+
+## Прошивки без Wi-Fi Direct (H50)
+
+Найдено по журналам установщика из [issue #2](https://github.com/otnep/coorlay/issues/2)
+(05.07.06000.H50.00032, device SX11QJ):
+
+- В `/system/etc/permissions` нет `android.hardware.wifi.direct.xml` (в
+  05.05.10500 H30 он есть). Без него `hasSystemFeature` ложно,
+  `WifiStateMachine` запускает обычный `wpa_supplicant` только на `wlan0`,
+  `WifiP2pService` не включается, `p2p_supplicant.conf` не создаётся. Ссылка
+  на сокет `p2p0` тут ничего не даёт.
+- Шаблон `wpa_supplicant.conf` в H50 другой:
+  `ctrl_interface=/data/system/wpa_supplicant`. `libhardware_legacy` такую
+  форму (начинается с `/`) тоже не переписывает, поэтому после включения
+  Wi-Fi Direct ожидается та же ошибка с сокетом `p2p0`, что и в H30; версия 7
+  её узнаёт.
+- В CommunityFull/Lite есть шаг «Включаем Wi-Fi Direct» (`ReplaceSysFile
+  android.hardware.wifi.direct.xml /etc/permissions`, затем перезагрузка), но
+  самого файла в архивах нет — шаг пропускается.
+
+Версия 7 с `ENABLE_WIFI_DIRECT_FEATURE=1` добавляет файл, только если:
+
+1. файла нет (свой файл прошивки или мода не заменяется);
+2. в `/init*.rc` есть служба `p2p_supplicant` на `-ip2p0`;
+3. её бинарник существует и, если busybox умеет `grep`, содержит код P2P;
+4. шаблон `wpa_supplicant.conf` — известный заводской (H30 или H50).
+
+Файл — стандартный файл Android (как в 05.05.10500) с пометкой «added by the
+coorlay root installer»; права `0644 root:root`; `/system` перемонтируется на
+запись только на время записи. Сразу после этого в том же запуске делается
+ссылка `p2p0`. Android читает список функций только при старте, поэтому
+Wi-Fi Direct появляется после выключения и включения зажигания (скрипт ГУ не
+перезагружает). coorlay до этого не проверяет Wi-Fi Direct и не тратит на него
+свою единственную пробу.
+
+**Риск.** Есть ли в драйвере H50 поддержка P2P, заранее не известно. Если её
+нет, `p2p_supplicant` может не запуститься, и тогда не включится Wi-Fi-клиент
+ГУ. Точка доступа (`hostapd`) от supplicant'а не зависит. Откат —
+`RESTORE_WIFI_DIRECT=1` (флешка `undo`): удаляет только файл с пометкой coorlay.
+Запуск с флешки от root от состояния Wi-Fi не зависит.
+
+**Не проверено ни на H50, ни в эмуляторе** (в AVD нет Wi-Fi Direct и
+`/system` не перемонтируется).
 
 ## Wi-Fi Direct в coorlay после исправления
 

@@ -15,13 +15,25 @@
 
 .EXAMPLE
     .\Prepare-UsbStick.ps1 -Drive E: -Mode Restore
-    Вернуть исходный p2p_supplicant.conf (отменить исправление Wi-Fi Direct); coorlay не трогается.
+    Вернуть исходный p2p_supplicant.conf (отменить исправление Wi-Fi Direct) и убрать файл Wi-Fi Direct, если его
+    добавил coorlay (-Mode WifiDirectEnable); coorlay не трогается.
+
+.EXAMPLE
+    .\Prepare-UsbStick.ps1 -Drive E: -Mode WifiDirectEnable
+    Для прошивок без Wi-Fi Direct (05.07.06000.H50): добавить android.hardware.wifi.direct.xml в /system и исправить
+    Wi-Fi Direct. Пишет в /system; действует после выключения и включения зажигания. Отмена — -Mode Restore.
+
+.EXAMPLE
+    .\Prepare-UsbStick.ps1 -Drive E: -Mode Dump
+    Только скопировать штатные KC2_popview, KC2_btphoneApp, KC2_btphone и /system/framework на флешку
+    (coorlay\dump, около 90 МБ). На магнитоле ничего не меняется.
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Drive,
     # Full — установить/обновить coorlay и исправить Wi-Fi Direct; WifiDirect — только исправление;
-    # Restore — только вернуть исходную настройку Wi-Fi Direct.
-    [ValidateSet('Full', 'WifiDirect', 'Restore')][string]$Mode = 'Full',
+    # Restore — только вернуть исходную настройку Wi-Fi Direct; Dump — только копии штатных приложений на флешку;
+    # WifiDirectEnable — добавить в прошивку файл Wi-Fi Direct (H50) и исправить Wi-Fi Direct.
+    [ValidateSet('Full', 'WifiDirect', 'Restore', 'Dump', 'WifiDirectEnable')][string]$Mode = 'Full',
     [string]$Apk,
     # Переименовать чужую папку-триггер (например, от CommunityFull) вместо остановки.
     [switch]$Force
@@ -71,9 +83,11 @@ if ($installApp) { Copy-Item $Apk $coorlay }
 
 # install.conf: what install.sh does on this run.
 $settings = @{
-    'Full'       = @{ INSTALL_APP = 1; FIX_WIFI_DIRECT = 1; RESTORE_WIFI_DIRECT = 0 }
-    'WifiDirect' = @{ INSTALL_APP = 0; FIX_WIFI_DIRECT = 1; RESTORE_WIFI_DIRECT = 0 }
-    'Restore'    = @{ INSTALL_APP = 0; FIX_WIFI_DIRECT = 0; RESTORE_WIFI_DIRECT = 1 }
+    'Full'             = @{ INSTALL_APP = 1; FIX_WIFI_DIRECT = 1; RESTORE_WIFI_DIRECT = 0; ENABLE_WIFI_DIRECT_FEATURE = 0; DUMP_SYSTEM_APPS = 0 }
+    'WifiDirect'       = @{ INSTALL_APP = 0; FIX_WIFI_DIRECT = 1; RESTORE_WIFI_DIRECT = 0; ENABLE_WIFI_DIRECT_FEATURE = 0; DUMP_SYSTEM_APPS = 0 }
+    'Restore'          = @{ INSTALL_APP = 0; FIX_WIFI_DIRECT = 0; RESTORE_WIFI_DIRECT = 1; ENABLE_WIFI_DIRECT_FEATURE = 0; DUMP_SYSTEM_APPS = 0 }
+    'Dump'             = @{ INSTALL_APP = 0; FIX_WIFI_DIRECT = 0; RESTORE_WIFI_DIRECT = 0; ENABLE_WIFI_DIRECT_FEATURE = 0; DUMP_SYSTEM_APPS = 1 }
+    'WifiDirectEnable' = @{ INSTALL_APP = 0; FIX_WIFI_DIRECT = 1; RESTORE_WIFI_DIRECT = 0; ENABLE_WIFI_DIRECT_FEATURE = 1; DUMP_SYSTEM_APPS = 0 }
 }[$Mode]
 $conf = Join-Path $coorlay 'install.conf'
 $lines = (Get-Content (Join-Path $source 'coorlay\install.conf')) | ForEach-Object {
@@ -83,9 +97,11 @@ $lines = (Get-Content (Join-Path $source 'coorlay\install.conf')) | ForEach-Obje
 
 Write-Host ""
 $what = @{
-    'Full'       = 'установка/обновление coorlay и исправление Wi-Fi Direct'
-    'WifiDirect' = 'только исправление Wi-Fi Direct (coorlay не трогается)'
-    'Restore'    = 'только возврат исходной настройки Wi-Fi Direct (coorlay не трогается)'
+    'Full'             = 'установка/обновление coorlay и исправление Wi-Fi Direct'
+    'WifiDirect'       = 'только исправление Wi-Fi Direct (coorlay не трогается)'
+    'Restore'          = 'только возврат исходной настройки Wi-Fi Direct (coorlay не трогается)'
+    'Dump'             = 'только копии штатных popview/btphoneApp/btphone и framework в coorlay\dump (магнитола не меняется)'
+    'WifiDirectEnable' = 'добавление файла Wi-Fi Direct в прошивку (H50) и исправление Wi-Fi Direct; после — выключить и включить зажигание'
 }[$Mode]
 Write-Host "Флешка $root готова: $what"
 Write-Host "  $entry\$entryScript  — запускается прошивкой от root"

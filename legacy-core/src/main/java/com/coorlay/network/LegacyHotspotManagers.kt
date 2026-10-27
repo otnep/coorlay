@@ -68,6 +68,11 @@ class WifiP2pGroupManager(context: Context, private val onDiagnostic: (String) -
     override fun start(timeoutMillis: Long): WirelessHotspotInfo {
         check(Looper.myLooper() != Looper.getMainLooper()) { "Run Wi-Fi startup on the worker" }
         val deadline = System.nanoTime() + timeoutMillis * 1_000_000L
+        // Without the feature Android never starts P2P: fail before the hotspot is switched off.
+        if (!featureDeclared(context)) {
+            remember(context, false)
+            throw IOException(featureMissing())
+        }
         try {
             prepareRadio(deadline)
             awaitP2pEnabled(minOf(deadline, System.nanoTime() + P2P_ENABLE_WAIT_NANOS))
@@ -231,6 +236,20 @@ class WifiP2pGroupManager(context: Context, private val onDiagnostic: (String) -
         private const val WIFI_AP_STATE_ENABLED = 13
         private const val PREFS = "wifi-direct"
         private const val KEY_WORKED = "groupReady"
+        private const val FEATURE = "android.hardware.wifi.direct"
+        private fun featureMissing() = tr(
+            "Wi-Fi Direct недоступен: в прошивке этой магнитолы нет функции Wi-Fi Direct ($FEATURE). Подключайтесь через " +
+                "точку доступа: выключите «Wi-Fi Direct» в «Настройки → Подключение». Добавить функцию можно флешкой " +
+                "coorlay-usb-wifi-direct-enable (инструкция ROOT-INSTALL)",
+            "Wi-Fi Direct is unavailable: this head-unit firmware does not include Wi-Fi Direct ($FEATURE). Connect through " +
+                "the hotspot: turn off «Wi-Fi Direct» in «Settings → Connection». The coorlay-usb-wifi-direct-enable stick " +
+                "can add it (ROOT-INSTALL guide)")
+
+        /**
+         * Whether the firmware declares Wi-Fi Direct. The H50 firmware 05.07.06000 does not (issue #2): Android then runs
+         * plain wpa_supplicant, P2P never starts, and the root script's link fix cannot help.
+         */
+        fun featureDeclared(context: Context) = context.packageManager.hasSystemFeature(FEATURE)
 
         /** P2P state from the sticky WIFI_P2P_STATE_CHANGED broadcast: true enabled, false disabled, null not sent yet. */
         fun p2pEnabled(context: Context): Boolean? {
