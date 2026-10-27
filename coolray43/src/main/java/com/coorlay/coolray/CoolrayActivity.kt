@@ -91,7 +91,8 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
                 // itself when A2DP comes up. Without a MODE press that is not the driver's choice: CarPlay stays.
                 if (source == "audio_bt" && controller != null && videoActive && !driverChoseSource()) {
                     log("OEM Bluetooth music came up without MODE; CarPlay keeps the screen and sound", display = false)
-                    if (spuriousTakeoverAllowed()) {
+                    if (carPlayCall() != null) log("CALL: Bluetooth source left alone during the call", display = false)
+                    else if (spuriousTakeoverAllowed()) {
                         sink?.resumeMusic("Bluetooth music without MODE")
                         returnToCarPlay(tr("Bluetooth-музыка без MODE", "Bluetooth music without MODE"), bringToFront = true)
                     }
@@ -963,6 +964,10 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
         val activeSink = sink ?: return
         if (bringToFront) bringToFront()
         if (videoActive && menuOverCarPlay) showCarPlayView()
+        carPlayCall()?.let { phase ->
+            log("CALL: sound not returned during the call ($reason, phase=$phase): the call audio stays where the driver put it", display = false)
+            return
+        }
         log("AUDIO before return: ${oemAudioState()}", display = false)
         if (activeSink.resumeMusic(reason)) {
             // Untaking the main audio routes the iPhone's music back over CarPlay (not the Bluetooth
@@ -971,7 +976,7 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
             val untaken = active.changeMainAudio(take = false)
             log("CarPlay sound returned ($reason), changeModes untake=$untaken", display = false)
             handler.postDelayed({
-                if (!destroyed && controller === active && sink === activeSink && !activeSink.musicStreaming) {
+                if (!destroyed && controller === active && sink === activeSink && !activeSink.musicStreaming && carPlayCall() == null) {
                     val sent = active.sendMediaButton(CarPlayMediaButton.PLAY_PAUSE)
                     log("CarPlay music did not start after the return; Play/Pause sent=$sent", display = false)
                 }
@@ -1203,6 +1208,12 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
                         if (!resumed) bringToFront()
                     } } },
                     onMusicFocusLost = lost@{
+                        controller?.callPhase()?.let { phase ->
+                            // changeModes and Pause during a call made the iPhone reconsider the call's audio route.
+                            log("CALL: audio focus lost during the call (phase=$phase, ${oemAudioState()}); " +
+                                "no changeModes, no pause", display = false)
+                            return@lost
+                        }
                         if (!driverChoseSource() && spuriousTakeoverAllowed()) {
                             // Not a MODE press: e.g. the stock Bluetooth player when A2DP to the CarPlay iPhone comes up.
                             log("Audio focus taken without MODE (${oemAudioState()}); CarPlay music keeps playing", display = false)
@@ -1340,6 +1351,12 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
             }
         }
     }
+    /**
+     * The iPhone's call (iAP2 CallStateUpdate), null without one. During a call coorlay sends the iPhone no audio
+     * changes (changeModes, Play/Pause): the driver moved the call to the iPhone's own speaker and it kept coming
+     * back to CarPlay (user, 2026-10-22).
+     */
+    private fun carPlayCall() = controller?.callPhase()
     /** When the driver last pressed MODE (uptime ms). */
     private var lastModePressAt = 0L
     private val spuriousTakeovers = ArrayDeque<Long>()

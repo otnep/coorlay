@@ -519,28 +519,6 @@ internal fun pcmAudible(bytes: ByteArray, length: Int = bytes.size, threshold: I
     return false
 }
 
-/**
- * Multiplies 16-bit little-endian PCM in place by [gain]. Above [PCM_KNEE] the rest of the range up to twice
- * full scale is squeezed into the headroom, so loud syllables flatten instead of clipping hard.
- */
-internal fun applyPcmGain(bytes: ByteArray, offset: Int, length: Int, gain: Float) {
-    var cursor = offset
-    val end = offset + length
-    while (cursor + 1 < end) {
-        val sample = (bytes[cursor].toInt() and 0xff) or (bytes[cursor + 1].toInt() shl 8)
-        var scaled = (sample * gain).toInt()
-        val magnitude = if (scaled < 0) -scaled else scaled
-        if (magnitude > PCM_KNEE) {
-            val squeezed = minOf(32767, PCM_KNEE + (magnitude - PCM_KNEE) * (32767 - PCM_KNEE) / (65534 - PCM_KNEE))
-            scaled = if (scaled < 0) -squeezed else squeezed
-        }
-        bytes[cursor] = scaled.toByte(); bytes[cursor + 1] = (scaled shr 8).toByte()
-        cursor += 2
-    }
-}
-
-private const val PCM_KNEE = 24576
-
 /** The 7-byte MPEG-4 ADTS header of [MediaCodecSupport.adtsFrame], written into [target] without a new array. */
 internal fun writeAdtsHeader(target: ByteArray, accessUnitSize: Int, sampleRate: Int, channels: Int) {
     val frequencyIndex = MediaCodecSupport.aacFrequencyIndex(sampleRate)
@@ -581,13 +559,9 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
     /**
      * Siri's reply comes much quieter than music and the car adds no voice gain of its own (user, 2026-10-18);
      * so does the other party in a call (user, 2026-10-21). Both play on the music volume, not the stock
-     * phone's own call volume.
+     * phone's own call volume, so their level is evened out here ([VoiceLeveler]).
      */
-    private val gain = when {
-        format.audioType.equals("speechRecognition", ignoreCase = true) -> SIRI_GAIN
-        format.audioType.equals("telephony", ignoreCase = true) -> CALL_GAIN
-        else -> 1f
-    }
+    private val leveler = VoiceLeveler.forAudioType(format.audioType, rate, format.channels)
     /**
      * Prompts, Siri and calls arrive unbuffered (audioLatencyMs 80). Started on the first 20 ms packet,
      * the track ran dry on every late packet or slow decode and the navigation voice crackled (0.0.45b-9),
@@ -622,7 +596,7 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
     @Volatile private var statsMaxGapNs = 0L
     @Volatile private var statsMaxQueue = 0
     @Volatile private var statsMaxWriteNs = 0L
-    // Signal level before [gain], to compare Siri with music: sum of squares, samples and peak.
+    // Signal level before [leveler], to compare Siri with music: sum of squares, samples and peak.
     @Volatile private var statsSquares = 0.0
     @Volatile private var statsSamples = 0L
     @Volatile private var statsPeak = 0
@@ -647,8 +621,9 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
             (if (opus != null) " opusDecodeMax=%.1fms concealed=%d dropped=%d".format(java.util.Locale.US,
                 statsMaxDecodeNs / 1e6, statsConcealed, statsDropped) else "") +
             (if (rebuffering) " reserve=%dms rebuffers=%d".format(java.util.Locale.US, targetMs, statsRebuffers) else "") +
-            (if (statsSamples > 0) " level rms=%.1fdBFS peak=%.1fdBFS gain=%.1f".format(java.util.Locale.US,
-                dbfs(Math.sqrt(statsSquares / statsSamples)), dbfs(statsPeak.toDouble()), gain) else "") +
+            (if (statsSamples > 0) " level rms=%.1fdBFS peak=%.1fdBFS".format(java.util.Locale.US,
+                dbfs(Math.sqrt(statsSquares / statsSamples)), dbfs(statsPeak.toDouble())) else "") +
+            (leveler?.takeStats() ?: "") +
             (if (final) " final" else ""))
         statsWindowNs = now; statsPackets = 0; statsMaxGapNs = 0; statsMaxQueue = 0; statsMaxWriteNs = 0; statsMaxDecodeNs = 0
         statsConcealed = 0; statsDropped = 0; statsRebuffers = 0; statsSquares = 0.0; statsSamples = 0; statsPeak = 0
@@ -790,7 +765,7 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
     private fun write(bytes: ByteArray, start: Int, length: Int) {
         if (music && focus.parked && pcmAudible(bytes, length, offset = start)) focus.musicAudible()
         measure(bytes, start, length)
-        if (gain != 1f) applyPcmGain(bytes, start, length, gain)
+        leveler?.process(bytes, start, length)
         val started = System.nanoTime()
         val end = start + length
         var offset = start
@@ -839,13 +814,6 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
         /** Opus voice reserve: step after each dry track that was a gap, and ceiling. */
         const val VOICE_STEP_MS = 100
         const val VOICE_MAX_MS = 500
-        /** About +6 dB; the level in the stats line shows how far Siri sits below music. */
-        const val SIRI_GAIN = 2f
-        /**
-         * About +9.5 dB: call audio is levelled for a handset earpiece (around -26 dBFS speech), well below Siri
-         * and music; the soft knee in [applyPcmGain] takes the louder syllables.
-         */
-        const val CALL_GAIN = 3f
         /** Music starts with less than its reserve only after this long without a packet. */
         const val MUSIC_IDLE_START_NS = 1_000_000_000L
         /** A packet within this time after the track ran dry: a gap in arrival, not the iPhone pausing. */
