@@ -8,9 +8,9 @@
 #
 # Safety rules (stock firmware, CommunityFull, any other head unit):
 # - Nothing is changed unless the head unit is a Coolray Neusoft (manufacturer, model, board, Android 4.3, 05.05-05.07).
-# - The head unit is never rebooted. /system is written only with ENABLE_WIFI_DIRECT_FEATURE=1 (off unless the
-#   "wifi-direct-enable" stick sets it): one file, android.hardware.wifi.direct.xml, added only where the firmware
-#   lacks it and has everything else Wi-Fi Direct needs; RESTORE_WIFI_DIRECT=1 removes only that file of ours.
+# - The head unit is never rebooted. ENABLE_WIFI_DIRECT_FEATURE=1 may add Android's Wi-Fi Direct feature
+#   declaration. On the exact H50 build in issue #2 it also installs a checksum-verified supplicant event fix
+#   with a backup. RESTORE_WIFI_DIRECT=1 removes our declaration and restores that backup when present.
 # - Since v4 p2p_supplicant.conf stays as the firmware made it. The fix is one symbolic link,
 #   /data/misc/wifi/sockets/p2p0 -> /data/system/wpa_supplicant/p2p0, made only when the firmware has exactly the
 #   known bug (template and file carry a stock ctrl_interface into /data/system/wpa_supplicant: H30
@@ -26,7 +26,7 @@
 # Visible result: while it works the Android "About" screen is open; at the end coorlay opens on success,
 # the "About" screen stays on failure. Everything is written to coorlay/logs/install-<date>.log on the stick.
 
-VERSION=7
+VERSION=8
 usb="$1"
 dir="$usb/coorlay"
 PKG=com.coorlay
@@ -97,6 +97,10 @@ if [ -f "$dir/install.conf" ]; then
 	done < "$dir/install.conf"
 fi
 if [ "$RESTORE_WIFI_DIRECT" = 1 ]; then FIX_WIFI_DIRECT=0; ENABLE_WIFI_DIRECT_FEATURE=0; fi
+if [ "$ENABLE_WIFI_DIRECT_FEATURE" = 1 ] || [ "$RESTORE_WIFI_DIRECT" = 1 ]; then
+	if [ ! -r "$dir/h50-wifi-direct.sh" ]; then say "Missing h50-wifi-direct.sh; copy the entire installer to the stick"; exit 1; fi
+	. "$dir/h50-wifi-direct.sh"
+fi
 
 say "coorlay root installer v$VERSION from $usb"
 say "user: $(id)"
@@ -413,7 +417,11 @@ mark_wifi_direct() {
 # P2P, Wi-Fi client mode may not start: RESTORE_WIFI_DIRECT=1 removes the file again.
 feature_added=0
 enable_wifi_direct_feature() {
-	if [ -f $FEATURE_XML ]; then say "Wi-Fi Direct feature: already declared: $(ls -l $FEATURE_XML 2>&1); nothing added"; return 0; fi
+	if [ -f $FEATURE_XML ]; then
+		h50_prepare_supplicant || return 1
+		say "Wi-Fi Direct feature: already declared: $(ls -l $FEATURE_XML 2>&1); nothing added"
+		return 0
+	fi
 	if ! p2p_service; then say "Wi-Fi Direct feature: no p2p_supplicant service in /init*.rc; not added"; return 1; fi
 	case "$P2P_SERVICE_CMD" in
 		*-ip2p0*) ;;
@@ -430,6 +438,7 @@ enable_wifi_direct_feature() {
 	if ! stock_ctrl "$template"; then
 		say "Wi-Fi Direct feature: template ctrl_interface is '$template', which the link fix does not know; not added"; return 1
 	fi
+	h50_prepare_supplicant || return 1
 	system_rw || { say "Wi-Fi Direct feature: not added"; return 1; }
 	new=$FEATURE_XML.coorlay-new
 	{
@@ -549,10 +558,22 @@ if [ "$FIX_WIFI_DIRECT" = 1 ] || [ "$RESTORE_WIFI_DIRECT" = 1 ] || [ "$ENABLE_WI
 	wifi_direct_state before
 	if [ "$RESTORE_WIFI_DIRECT" = 1 ]; then
 		restore_wifi_direct || failed=1
-		remove_wifi_direct_feature || failed=1
+		if remove_wifi_direct_feature; then
+			if [ ! -f "$FEATURE_XML" ]; then h50_restore_supplicant || failed=1
+			elif [ -e "$H50_BACKUP" ]; then say "H50 Wi-Fi Direct: keeping the compatible supplicant while Wi-Fi Direct remains declared"; fi
+		else
+			failed=1
+		fi
+	elif [ "$ENABLE_WIFI_DIRECT_FEATURE" = 1 ] && ! enable_wifi_direct_feature; then
+		failed=1
+		if [ "$h50_supplicant_changed" = 1 ] && [ ! -f "$FEATURE_XML" ]; then h50_restore_supplicant; fi
 	else
-		if [ "$ENABLE_WIFI_DIRECT_FEATURE" = 1 ]; then enable_wifi_direct_feature || failed=1; fi
-		if [ "$FIX_WIFI_DIRECT" = 1 ]; then fix_wifi_direct || failed=1; fi
+		if [ "$FIX_WIFI_DIRECT" = 1 ] && ! fix_wifi_direct; then
+			failed=1
+			if [ "$feature_added" = 1 ] && remove_wifi_direct_feature && [ "$h50_supplicant_changed" = 1 ]; then
+				h50_restore_supplicant
+			fi
+		fi
 	fi
 	wifi_direct_state after
 fi
@@ -565,8 +586,8 @@ if [ "$RUN_ONCE" = 1 ] && [ -d "$usb/$ENTRY_DIR" ]; then
 fi
 sync
 
-if [ $feature_added = 1 ] || [ $feature_removed = 1 ]; then
-	say "RESTART NEEDED: Android reads the Wi-Fi Direct feature only when it starts. Turn the ignition off, wait until" \
+if [ $feature_added = 1 ] || [ $feature_removed = 1 ] || [ "$h50_supplicant_changed" = 1 ]; then
+	say "RESTART NEEDED: restart Android to apply the Wi-Fi Direct system changes. Turn the ignition off, wait until" \
 		"the screen goes dark, and turn it on again"
 fi
 if [ $failed = 0 ]; then

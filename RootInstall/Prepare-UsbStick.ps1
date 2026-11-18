@@ -21,7 +21,8 @@
 .EXAMPLE
     .\Prepare-UsbStick.ps1 -Drive E: -Mode WifiDirectEnable
     Для прошивок без Wi-Fi Direct (05.07.06000.H50): добавить android.hardware.wifi.direct.xml в /system и исправить
-    Wi-Fi Direct. Пишет в /system; действует после выключения и включения зажигания. Отмена — -Mode Restore.
+    Wi-Fi Direct. На H50.00032 также исправляет события wpa_supplicant.
+    Пишет в /system и действует после выключения и включения зажигания. Отмена — -Mode Restore.
 
 .EXAMPLE
     .\Prepare-UsbStick.ps1 -Drive E: -Mode Dump
@@ -105,6 +106,6 @@ $what = @{
 }[$Mode]
 Write-Host "Флешка $root готова: $what"
 Write-Host "  $entry\$entryScript  — запускается прошивкой от root"
-Write-Host "  coorlay\install.sh, install.conf — установщик и его настройки"
+Write-Host "  coorlay\install.sh, h50-wifi-direct.sh, install.conf — установщик и его настройки"
 if ($installApp) { Write-Host "  coorlay\$(Split-Path $Apk -Leaf)" }
 Write-Host "Журнал появится в coorlay\logs. Порядок установки — в ROOT-INSTALL.md."
