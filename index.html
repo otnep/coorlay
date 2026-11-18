@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>coorlay — CarPlay для Geely Coolray</title>
-<meta name="description" content="Экспериментальный CarPlay для штатной магнитолы Geely Coolray (Neusoft, Android 4.3). Experimental CarPlay for the factory Geely Coolray head unit.">
+<meta name="description" content="CarPlay по USB и Wi-Fi для Geely Coolray с магнитолой Neusoft на Android 4.3. Надёжная работа подтверждена на H30.">
 <meta property="og:title" content="coorlay — CarPlay для Geely Coolray">
-<meta property="og:description" content="Экспериментальный CarPlay для штатной магнитолы Geely Coolray (Neusoft, Android 4.3).">
-<meta property="og:image" content="https://otnep.github.io/coorlay/img/home-ru.jpg">
+<meta property="og:description" content="CarPlay для штатной магнитолы Geely Coolray. H30 проверена, H40 не тестировали, на H50 есть известные проблемы.">
+<meta property="og:image" content="https://otnep.github.io/coorlay/img/home-ru.jpg?v=1.0.4">
 <meta name="theme-color" content="#0b0d12">
 <link rel="icon" type="image/png" href="img/icon.png">
 <style>
@@ -61,7 +61,9 @@
   .hero { text-align: center; padding: 56px 0 32px; }
   .logo { font-size: clamp(56px, 12vw, 96px); font-weight: 800; letter-spacing: -0.03em; line-height: 1; margin: 0; }
   .logo span { color: var(--red); }
-  .tagline { font-size: clamp(18px, 3vw, 22px); color: var(--muted); max-width: 720px; margin: 18px auto 28px; }
+  .tagline { font-size: clamp(18px, 3vw, 22px); color: var(--muted); max-width: 720px; margin: 18px auto 12px; }
+  .compat-summary { font-size: 15px; margin: 0 auto 24px; }
+  .compat-summary a { text-decoration: underline; text-underline-offset: 3px; }
   .actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
   .btn {
     display: inline-flex; align-items: center; gap: 10px;
@@ -98,6 +100,8 @@
   tr:last-child th, tr:last-child td { border-bottom: 0; }
   th { color: var(--muted); font-weight: 500; width: 34%; }
   .note { color: var(--muted); font-size: 15px; margin-top: 12px; }
+  #device { scroll-margin-top: 60px; }
+  #device th { width: 16%; color: var(--text); font-weight: 700; }
 
   ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 0; display: grid; gap: 12px; }
   ol.steps li { counter-increment: s; position: relative; padding: 16px 18px 16px 62px; background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--radius); }
@@ -113,6 +117,7 @@
   .warn { background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-text); border-radius: var(--radius); padding: 18px 20px; }
   .warn h3 { color: #ffd58a; }
   .warn p { margin: 6px 0 0; }
+  .upgrade { margin-bottom: 14px; }
 
   footer { border-top: 1px solid var(--line); margin-top: 56px; padding: 28px 0 40px; color: var(--muted); font-size: 14px; }
   footer p { margin: 6px 0; }
@@ -142,14 +147,18 @@
   <div class="hero">
     <h1 class="logo">coor<span>lay</span></h1>
     <p class="tagline">
-      <span lang="ru">Экспериментальный CarPlay для штатной магнитолы Geely Coolray — по USB и без провода.</span>
-      <span lang="en">Experimental CarPlay for the factory Geely Coolray head unit — over USB and wireless.</span>
+      <span lang="ru">CarPlay по USB и Wi-Fi на штатном экране Geely Coolray.</span>
+      <span lang="en">Wired and wireless CarPlay on the factory Geely Coolray screen.</span>
+    </p>
+    <p class="compat-summary">
+      <span lang="ru">Стабильная работа подтверждена только на <strong>H30</strong>. <a href="#device">H40 не тестировали, на H50 есть сбои.</a></span>
+      <span lang="en">Reliable operation is confirmed only on <strong>H30</strong>. <a href="#device">H40 is untested and H50 has known issues.</a></span>
     </p>
     <div class="actions">
-      <a class="btn primary" id="download" href="https://github.com/otnep/coorlay/releases/latest">
+      <a class="btn primary" id="download" href="https://github.com/otnep/coorlay/releases/download/v1.0.4/coorlay-1.0.4.apk">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
         <span lang="ru">Скачать APK</span><span lang="en">Download APK</span>
-        <span class="ver" id="ver"></span>
+        <span class="ver" id="ver">1.0.4</span>
       </a>
       <a class="btn" href="https://github.com/otnep/coorlay">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.7 5.39-5.27 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
@@ -162,14 +171,36 @@
     </p>
 
     <figure class="shot">
-      <img lang="ru" src="img/home-ru.jpg" width="1920" height="640" alt="Главный экран coorlay на магнитоле 1920×640">
-      <img lang="en" src="img/home-en.jpg" width="1920" height="640" alt="coorlay home screen on a 1920×640 head unit">
+      <img lang="ru" src="img/home-ru.jpg?v=1.0.4" width="1920" height="640" alt="Главный экран coorlay 1.0.4 на фоне ночного горного перевала">
+      <img lang="en" src="img/home-en.jpg?v=1.0.4" width="1920" height="640" alt="coorlay 1.0.4 home screen with the night mountain pass wallpaper">
       <figcaption>
-        <span lang="ru">Главный экран на магнитоле 1920×640</span>
-        <span lang="en">Home screen on the 1920×640 head unit</span>
+        <span lang="ru">Главный экран coorlay 1.0.4 · 1920×640</span>
+        <span lang="en">coorlay 1.0.4 home screen · 1920×640</span>
       </figcaption>
     </figure>
   </div>
+
+  <section id="device">
+    <h2 id="compatibility-heading"><span lang="ru">Совместимость</span><span lang="en">Compatibility</span></h2>
+    <p class="note">
+      <span lang="ru">Geely Coolray / SX11 со штатной магнитолой Neusoft, плата <code>C3ALFUS</code>, Android 4.3. Сверьте ревизию в строке версии ПО магнитолы.</span>
+      <span lang="en">Geely Coolray / SX11 with the factory Neusoft head unit, <code>C3ALFUS</code> board and Android 4.3. Check the revision in the head unit's software version.</span>
+    </p>
+    <table aria-labelledby="compatibility-heading">
+      <tr><th scope="row">H30</th><td>
+        <span lang="ru"><strong>Проверено.</strong> CarPlay по USB и по Wi-Fi работает стабильно на проверенных магнитолах H30.</span>
+        <span lang="en"><strong>Verified.</strong> Wired and wireless CarPlay run reliably on the H30 units tested.</span>
+      </td></tr>
+      <tr><th scope="row">H40</th><td>
+        <span lang="ru"><strong>Не тестировали.</strong> Данных о совместимости пока нет.</span>
+        <span lang="en"><strong>Untested.</strong> Compatibility is still unknown.</span>
+      </td></tr>
+      <tr><th scope="row">H50</th><td>
+        <span lang="ru"><strong>Есть известные проблемы.</strong> На H50 фиксировали отключения USB, задержки через точку доступа и перезапуски ГУ при подключении через Wi-Fi Direct. В 1.0.4 добавлены настройка 1 А по USB и тестовое исправление Wi-Fi Direct v8 для <code>05.07.06000.H50.00032</code>. Проверка этих изменений на H50 ещё впереди. <a href="https://github.com/otnep/coorlay/issues/2">Отчёт по H50</a></span>
+        <span lang="en"><strong>Known issues.</strong> H50 reports include USB disconnects, lag over the hotspot, and reboots when connecting via Wi-Fi Direct. Version 1.0.4 adds a 1 A USB charging setting and the experimental Wi-Fi Direct v8 fix for <code>05.07.06000.H50.00032</code>. These changes still need testing on an H50 unit. <a href="https://github.com/otnep/coorlay/issues/2">H50 issue report</a></span>
+      </td></tr>
+    </table>
+  </section>
 
   <section id="features">
     <h2><span lang="ru">Возможности</span><span lang="en">Features</span></h2>
@@ -177,17 +208,17 @@
       <div class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 7h4"/><path d="M12 3v14"/><circle cx="12" cy="19" r="2"/><path d="M7 11l-2 2 2 2"/><path d="M17 9l2 2-2 2"/></svg></div>
         <h3><span lang="ru">CarPlay по USB</span><span lang="en">CarPlay over USB</span></h3>
-        <p><span lang="ru">Подключите iPhone кабелем — изображение, касания и звук сразу на экране магнитолы.</span><span lang="en">Plug in the iPhone — video, touch and audio go straight to the head-unit screen.</span></p>
+        <p><span lang="ru">Подключите iPhone кабелем. Приложения CarPlay открываются на штатном экране и управляются касанием.</span><span lang="en">Connect the iPhone over USB and use CarPlay apps on the factory touchscreen.</span></p>
       </div>
       <div class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1"/><path d="M2 9a14 14 0 0 1 20 0"/></svg></div>
         <h3><span lang="ru">Беспроводной CarPlay</span><span lang="en">Wireless CarPlay</span></h3>
-        <p><span lang="ru">Сопряжение через штатный Bluetooth, затем Wi-Fi — точка доступа магнитолы или Wi-Fi Direct.</span><span lang="en">Pairing over the factory Bluetooth, then Wi-Fi — the head unit's hotspot or Wi-Fi Direct.</span></p>
+        <p><span lang="ru">Сопрягите iPhone в штатном меню Bluetooth. CarPlay подключится через точку доступа магнитолы или Wi-Fi Direct, если он доступен.</span><span lang="en">Pair the iPhone in the factory Bluetooth menu. CarPlay connects through the head unit's hotspot or Wi-Fi Direct where available.</span></p>
       </div>
       <div class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v4"/></svg></div>
         <h3><span lang="ru">Звук, Siri и микрофон</span><span lang="en">Audio, Siri and microphone</span></h3>
-        <p><span lang="ru">Музыка, навигация, звонки и голосовое управление через штатные динамики и микрофон.</span><span lang="en">Music, navigation, calls and voice control through the car's speakers and microphone.</span></p>
+        <p><span lang="ru">Музыка, звонки, Siri и навигационные подсказки используют штатные динамики и микрофон.</span><span lang="en">Music, calls, Siri and navigation prompts use the car's speakers and microphone.</span></p>
       </div>
       <div class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 3v6.5"/><path d="M4.5 16.5 9.8 13.3"/><path d="m19.5 16.5-5.3-3.2"/></svg></div>
@@ -197,56 +228,42 @@
       <div class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="M12 18v4"/><path d="m4.9 4.9 2.8 2.8"/><path d="m16.3 16.3 2.8 2.8"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="m4.9 19.1 2.8-2.8"/><path d="m16.3 7.7 2.8-2.8"/></svg></div>
         <h3><span lang="ru">Автозапуск</span><span lang="en">Autostart</span></h3>
-        <p><span lang="ru">Стартует вместе с магнитолой и подключается сам: по USB сразу, без провода — через точку доступа.</span><span lang="en">Starts with the head unit and connects by itself: USB at once, wireless through the hotspot.</span></p>
+        <p><span lang="ru">В настройках можно включить запуск вместе с магнитолой и автоматическое беспроводное подключение.</span><span lang="en">Settings let you start coorlay with the head unit and enable automatic wireless connections.</span></p>
       </div>
       <div class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg></div>
         <h3><span lang="ru">Диагностика</span><span lang="en">Diagnostics</span></h3>
-        <p><span lang="ru">Журнал подключения сохраняется на флешку — с ним проще разобраться в проблеме. Интерфейс на русском и английском.</span><span lang="en">The connection log is saved to a USB stick to help track down problems. Russian and English interface.</span></p>
+        <p><span lang="ru">Если подключение срывается, сохраните журнал на флешку и приложите его к <a href="https://github.com/otnep/coorlay/issues">сообщению о проблеме</a>.</span><span lang="en">If a connection fails, save the log to a USB stick and attach it to an <a href="https://github.com/otnep/coorlay/issues">issue report</a>.</span></p>
       </div>
     </div>
   </section>
 
-  <section id="device">
-    <h2><span lang="ru">Для какой магнитолы</span><span lang="en">Supported head unit</span></h2>
-    <table>
-      <tr><th><span lang="ru">Автомобиль</span><span lang="en">Car</span></th><td>Geely Coolray / SX11</td></tr>
-      <tr><th><span lang="ru">Магнитола</span><span lang="en">Head unit</span></th><td>Neusoft, <code>C3ALFUS</code></td></tr>
-      <tr><th><span lang="ru">Прошивка</span><span lang="en">Firmware</span></th><td><code>05.05.*</code> – <code>05.07.*</code></td></tr>
-      <tr><th><span lang="ru">Система</span><span lang="en">System</span></th><td>Android 4.3 / API 18</td></tr>
-      <tr><th><span lang="ru">Экран</span><span lang="en">Screen</span></th><td>1920×640</td></tr>
-    </table>
-    <p class="note">
-      <span lang="ru">Другие магнитолы и прошивки не проверялись и не поддерживаются.</span>
-      <span lang="en">Other head units and firmware versions have not been tested and are not supported.</span>
-    </p>
-  </section>
-
   <section id="install">
     <h2><span lang="ru">Установка</span><span lang="en">Installation</span></h2>
+    <div class="warn upgrade">
+      <h3><span lang="ru">Переход на 1.0.4</span><span lang="en">Updating to 1.0.4</span></h3>
+      <p lang="ru">У версии 1.0.4 новая подпись APK. При переходе со старой официальной версии сначала удалите её. Настройки и сопряжения, сохранённые в приложении, при этом сбросятся.</p>
+      <p lang="en">Version 1.0.4 uses a new APK signing key. Uninstall the earlier official version before updating. This resets the settings and pairings stored in the app.</p>
+    </div>
     <ol class="steps">
       <li>
-        <span lang="ru">Скачайте APK и скопируйте его на флешку (FAT32).</span>
-        <span lang="en">Download the APK and copy it to a USB stick (FAT32).</span>
+        <span lang="ru">Скачайте APK и скопируйте его на флешку FAT32.</span>
+        <span lang="en">Download the APK and copy it to a FAT32 USB stick.</span>
       </li>
       <li>
-        <span lang="ru">Если стоят прежние сборки coorlay 0.0.x (пакет <code>com.shihab.diplay.coolray43</code>), удалите их: версия 1.0.0 ставится отдельным приложением, и две копии будут мешать друг другу.</span>
-        <span lang="en">If an earlier coorlay 0.0.x build is installed (package <code>com.shihab.diplay.coolray43</code>), uninstall it: 1.0.0 installs as a separate app, and two copies get in each other's way.</span>
+        <span lang="ru">Установите APK через файловый менеджер магнитолы. Для автоматической установки с флешки есть <a href="https://github.com/otnep/coorlay/releases/latest">архив для USB</a> и <a href="https://github.com/otnep/coorlay/blob/main/RootInstall/ROOT-INSTALL.md">инструкция</a>.</span>
+        <span lang="en">Install the APK with the head unit's file manager. For automatic installation from a USB stick, see the <a href="https://github.com/otnep/coorlay/releases/latest">USB installer</a> and its <a href="https://github.com/otnep/coorlay/blob/main/RootInstall/ROOT-INSTALL.md">guide</a> (in Russian).</span>
       </li>
       <li>
-        <span lang="ru">Установите APK файловым менеджером магнитолы — или <a href="https://github.com/otnep/coorlay/blob/main/RootInstall/ROOT-INSTALL.md">с флешки от root</a>: так же исправляется Wi-Fi Direct.</span>
-        <span lang="en">Install the APK with the head unit's file manager — or <a href="https://github.com/otnep/coorlay/blob/main/RootInstall/ROOT-INSTALL.md">as root from a USB stick</a> (in Russian), which also fixes Wi-Fi Direct.</span>
-      </li>
-      <li>
-        <span lang="ru">Подключите iPhone кабелем или выберите «Беспроводное подключение». Для беспроводного сначала выполните сопряжение iPhone в штатном меню Bluetooth магнитолы.</span>
-        <span lang="en">Connect the iPhone with a cable or choose "Wireless connection". For wireless, first pair the iPhone in the head unit's own Bluetooth menu.</span>
+        <span lang="ru">Откройте coorlay и выберите «Подключение по USB». Для беспроводного режима сначала сопрягите iPhone в штатном меню Bluetooth и нажмите «Беспроводное подключение».</span>
+        <span lang="en">Open coorlay and choose “USB connection”. For wireless, pair the iPhone in the head unit's Bluetooth menu first, then choose “Wireless connection”.</span>
       </li>
     </ol>
     <div class="card fix">
       <h3><span lang="ru">Wi-Fi Direct не включается?</span><span lang="en">Wi-Fi Direct does not turn on?</span></h3>
       <p>
-        <span lang="ru">На штатной прошивке Wi-Fi Direct не работает из-за ошибки в её настройках Wi-Fi. Её исправляет флешка: магнитола сама запускает скрипт от root, он меняет один системный файл и больше ничего не трогает. Можно исправить только Wi-Fi Direct, не переустанавливая coorlay. Без исправления беспроводной CarPlay работает через точку доступа магнитолы.</span>
-        <span lang="en">On the stock firmware Wi-Fi Direct is broken by a mistake in its Wi-Fi configuration. A USB stick fixes it: the head unit runs the script as root, and it changes one system file and nothing else. You can fix only Wi-Fi Direct without reinstalling coorlay. Without the fix, wireless CarPlay works through the head unit's hotspot.</span>
+        <span lang="ru">Для H30 есть отдельный USB-архив с исправлением Wi-Fi Direct. На H50 используйте v8 только для указанной в инструкции сборки прошивки. Чтобы подключаться через точку доступа магнитолы, выключите Wi-Fi Direct в настройках coorlay.</span>
+        <span lang="en">A separate USB archive provides the Wi-Fi Direct fix for H30. On H50, use v8 only on the firmware build listed in the guide. To connect through the head unit's hotspot, turn off Wi-Fi Direct in coorlay settings.</span>
       </p>
       <a class="btn" href="https://github.com/otnep/coorlay/blob/main/RootInstall/ROOT-INSTALL.md">
         <span lang="ru">Инструкция по исправлению Wi-Fi Direct</span>
@@ -312,7 +329,7 @@
     if (lang) setLang(lang, true);
   });
 
-  // The button opens the latest release page; when GitHub answers, it links the APK directly.
+  // Keep the download working with the bundled release link if GitHub's API is unavailable.
   fetch('https://api.github.com/repos/otnep/coorlay/releases/latest')
     .then(function (response) { return response.ok ? response.json() : null; })
     .then(function (release) {
