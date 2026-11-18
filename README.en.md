@@ -11,7 +11,7 @@ coorlay is a port of [DiPlay](https://github.com/shihabal3amri/DiPlay) (itself b
 on [xcertplay](https://github.com/shilapi/xcertplay)) to the old Android 4.3 platform.
 The project is not certified by Apple and is not affiliated with Apple, Geely or Neusoft.
 
-> **Status:** version `1.0.0`, experimental. Other head units and other firmware
+> **Status:** version `1.0.4`, experimental. Other head units and other firmware
 > versions have not been tested and are not supported.
 
 > [!WARNING]

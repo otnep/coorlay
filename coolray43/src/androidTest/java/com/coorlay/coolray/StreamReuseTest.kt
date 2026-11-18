@@ -40,7 +40,7 @@ class StreamReuseTest : AndroidTestCase() {
         val sizes = listOf(30_000, 500, 400_000, 20, 60_000, 1)
         val delivered = CountDownLatch(sizes.size)
         val frames = CopyOnWriteArrayList<ByteArray>()
-        val stream = ScreenStream(key, frameDecryptor = LegacyVideoCrypto.create(key))
+        val stream = ScreenStream(key, InetAddress.getByName("::1"), frameDecryptor = LegacyVideoCrypto.create(key))
         var peer: Socket? = null
         try {
             val port = stream.listen(object : ScreenStream.Listener {
@@ -62,7 +62,7 @@ class StreamReuseTest : AndroidTestCase() {
         val delivered = CountDownLatch(sizes.size)
         val frames = CopyOnWriteArrayList<ByteArray>()
         val buffers = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<ByteArray, Boolean>())
-        val stream = ScreenStream(key, frameDecryptor = LegacyVideoCrypto.create(key))
+        val stream = ScreenStream(key, InetAddress.getByName("::1"), frameDecryptor = LegacyVideoCrypto.create(key))
         var peer: Socket? = null
         try {
             val port = stream.listen(object : ScreenStream.Listener {
@@ -89,7 +89,7 @@ class StreamReuseTest : AndroidTestCase() {
         val frameCount = 150
         val messages = (0 until frameCount).map { videoMessage(nal(40_000, it), it.toLong()) }
         val delivered = CountDownLatch(frameCount)
-        val stream = ScreenStream(key, frameDecryptor = LegacyVideoCrypto.create(key))
+        val stream = ScreenStream(key, InetAddress.getByName("::1"), frameDecryptor = LegacyVideoCrypto.create(key))
         var peer: Socket? = null
         try {
             // Like the decoder: the pooled buffer goes back once read.

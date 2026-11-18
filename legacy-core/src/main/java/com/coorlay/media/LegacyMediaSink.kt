@@ -539,7 +539,7 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
     /** Music streams yield to other sources; prompts, Siri and calls keep playing. */
     private val music = format.payloadType == 102 || format.audioType == "media"
     @Volatile private var running = true
-    private var track: AudioTrack? = null
+    @Volatile private var track: AudioTrack? = null
     private var codec: MediaCodec? = null
     private var inputs: Array<ByteBuffer> = emptyArray()
     private var outputs: Array<ByteBuffer> = emptyArray()
@@ -795,8 +795,10 @@ private class LegacyAudioRenderer(private val format: AudioFormat, private val f
         playing = true
     }
     override fun close() {
-        running = false; worker.interrupt()
-        // Stop unblocks a writer before the worker releases its track.
+        running = false
+        packets.clear()
+        worker.interrupt()
+        // Pause unblocks a writer before the worker releases its track.
         runCatching { track?.pause() }; runCatching { track?.flush() }
     }
     private companion object {

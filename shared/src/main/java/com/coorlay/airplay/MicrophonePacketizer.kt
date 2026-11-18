@@ -39,6 +39,14 @@ data class MicrophoneConfig(
         private const val OPUS_SAMPLES_PER_PACKET = 960
         private const val OPUS_CAPTURE_RATE = 48_000
         private const val OPUS_FRAME_MILLIS = 20
+        private const val MAX_UDP_PAYLOAD = 1500 - 40 - 8 // USB NCM MTU, IPv6 and UDP headers.
+        private val PCM_DURATIONS_MS = intArrayOf(20, 10, 5)
+
+        /** Pick the longest PCM packet that fits the USB link when the phone supplies no size. */
+        internal fun pcmFrameMillis(sampleRate: Int, channels: Int): Int = PCM_DURATIONS_MS.firstOrNull { millis ->
+            val samples = sampleRate.toLong() * millis / 1000
+            samples * channels * 2 + MicrophonePacketizer.SEAL_OVERHEAD <= MAX_UDP_PAYLOAD
+        } ?: PCM_DURATIONS_MS.last()
 
         /**
          * The negotiated Opus format's clock: 48, 24 or 16 kHz (16 kHz seen on navigation prompts, 2026-10-12; DiPlay
@@ -70,6 +78,7 @@ object MicrophonePacketizer {
     const val RTP_HEADER_LEN = 12
     const val TAG_LEN = 16
     const val NONCE_LEN = 8
+    internal const val SEAL_OVERHEAD = RTP_HEADER_LEN + TAG_LEN + NONCE_LEN
 
     fun sealPacket(
         key: ByteArray,

@@ -250,6 +250,11 @@ internal class SettingsScreens(private val activity: Activity, private val host:
         setting(panel, network, WIFI_DIRECT, true, "Wi-Fi Direct",
             tr("Использовать Wi-Fi Direct для беспроводного подключения (если отключено - используется подключение через точку доступа)",
                 "Use Wi-Fi Direct for the wireless connection (when off, the connection goes through the hotspot)"))
+
+        val usb = panel.section(tr("Подключение по USB", "USB connection"))
+        setting(panel, usb, USB_CHARGING_LIMIT, defaultUsbChargingLimit(), tr("Зарядка iPhone до 1 А", "iPhone charging at 1 A"),
+            tr("Объявлять iPhone ток 1 А вместо 2,4 А. Действует со следующего подключения по USB.",
+                "Advertise 1 A to the iPhone instead of 2.4 A. Applies at the next USB connection."))
     }
 
     private fun diagnosticsSettings(panel: CoorlayPanel) {
@@ -529,3 +534,6 @@ internal const val AUTO_WIRELESS = "autoWireless"
  */
 internal const val WIFI_DIRECT = "wifiDirect"
 internal fun hotspotMode(prefs: SharedPreferences) = !prefs.getBoolean(WIFI_DIRECT, true)
+internal const val USB_CHARGING_LIMIT = "usbChargingLimit"
+internal fun defaultUsbChargingLimit(firmware: String = android.os.Build.DISPLAY.orEmpty()) =
+    firmware.contains(".H50.", ignoreCase = true)

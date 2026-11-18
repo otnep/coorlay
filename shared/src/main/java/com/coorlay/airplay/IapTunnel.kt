@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicLong
  */
 class IapTunnel(
     private val readKey: ByteArray,
+    private val expectedPeer: InetAddress,
     bindAddress: InetAddress = InetAddress.getByName("0.0.0.0"),
 ) : Closeable {
     interface Listener {
@@ -34,7 +35,7 @@ class IapTunnel(
     private val bindAddress =
         if (bindAddress is Inet4Address) InetAddress.getByName("0.0.0.0") else bindAddress
     private val servers = mutableListOf<ServerSocket>()
-    private var socket: Socket? = null
+    @Volatile private var socket: Socket? = null
     private val threads = mutableListOf<Thread>()
     private val peerConnected = CountDownLatch(1)
     @Volatile private var listener: Listener = object : Listener {}
@@ -113,17 +114,17 @@ class IapTunnel(
         )
         while (!closed.get()) {
             val accepted = try {
-                bound.accept()
+                bound.acceptFrom(expectedPeer) { listener.onDebug("AirPlay iAP tunnel: rejected sender outside the control session") }
             } catch (error: Exception) {
                 if (!closed.get()) listener.onClosed(error)
                 return
             }
+            socket = accepted
             if (closed.get()) {
                 safeClose(accepted)
                 return
             }
             accepted.setSoLinger(true, 0)
-            socket = accepted
             readCounter.set(0)
             peerConnected.countDown()
             listener.onOpen(accepted.remoteSocketAddress?.toString())

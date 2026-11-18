@@ -22,7 +22,7 @@ class AirPlaySetupTest : AndroidTestCase() {
 
     fun testIapTunnelAcceptsScopedLinkLocalConnectionOnAndroid43() {
         val address = scopedLinkLocal()
-        val tunnel = IapTunnel(ByteArray(32), address)
+        val tunnel = IapTunnel(ByteArray(32), expectedPeer = address, bindAddress = address)
         var peer: Socket? = null
         try {
             val port = tunnel.listen(object : IapTunnel.Listener {})
@@ -68,7 +68,7 @@ class AirPlaySetupTest : AndroidTestCase() {
         val key = ByteArray(32)
         val received = CountDownLatch(1)
         var frame: ByteArray? = null
-        val stream = ScreenStream(key)
+        val stream = ScreenStream(key, InetAddress.getByName("::1"))
         var peer: Socket? = null
         try {
             val port = stream.listen(object : ScreenStream.Listener {
@@ -78,7 +78,14 @@ class AirPlaySetupTest : AndroidTestCase() {
             val plain = byteArrayOf(0, 0, 0, 2, 0x65, 0x12)
             val header = ByteArray(128).apply { this[0] = (plain.size + 16).toByte() }
             val sealed = AirPlayCrypto.chachaSeal(key, AirPlayCrypto.nonce64(0), plain, header)
-            peer.getOutputStream().apply { write(header); write(sealed); flush() }
+            val shortHeader = ByteArray(128).apply { this[0] = plain.size.toByte() }
+            peer.getOutputStream().apply {
+                write(shortHeader)
+                write(byteArrayOf(0, 0, 0, 2, 0x65, 0x33))
+                write(header)
+                write(sealed)
+                flush()
+            }
             assertTrue("IPv6 video did not reach ScreenStream", received.await(3, TimeUnit.SECONDS))
             assertTrue(byteArrayOf(0, 0, 0, 1, 0x65, 0x12).contentEquals(frame))
         } finally { peer?.close(); stream.close() }

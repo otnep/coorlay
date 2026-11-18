@@ -90,7 +90,7 @@ class AirPlaySession(
     private val closed = AtomicBoolean(false)
     private val notified = AtomicBoolean(false)
     private var eventServer: ServerSocket? = null
-    private var eventSocket: Socket? = null
+    @Volatile private var eventSocket: Socket? = null
     private var eventCipher: ControlCipher? = null
     private var eventCseq = 0
     private var pendingNightMode: Boolean? = null
@@ -724,14 +724,19 @@ class AirPlaySession(
 
     private fun acceptEvent(server: ServerSocket) {
         try {
-            val socket = server.accept()
+            val expectedPeer = checkNotNull(peerAddress) { "AirPlay control peer unavailable" }
+            val socket = server.acceptFrom(expectedPeer) { debugLog("AirPlay event: rejected sender outside the control session") }
+            eventSocket = socket
+            if (closed.get()) {
+                safeClose(socket)
+                return
+            }
             socket.setSoLinger(true, 0)
             // Touches are small messages sent many times a second, and the iPhone does not answer them on
             // this channel. With Nagle's algorithm a touch waited for the iPhone's delayed ACK of the
             // previous one, so moves reached it in bunches (DiPlay 0.2.15).
             socket.tcpNoDelay = true
             debugLog("airplay event connection accepted from ${socket.remoteSocketAddress} noDelay=${socket.tcpNoDelay}")
-            eventSocket = socket
             val shared = pairVerify.shared
             if (shared == null) {
                 Log.e(TAG, "airplay event rejected: pair-verify shared secret unavailable")
@@ -918,6 +923,20 @@ internal fun teardownStreamTypes(body: Any?): List<Int>? {
 internal fun safeClose(socket: Socket?) { try { socket?.close() } catch (_: Exception) { } }
 internal fun safeClose(socket: ServerSocket?) { try { socket?.close() } catch (_: Exception) { } }
 internal fun safeClose(socket: DatagramSocket?) { try { socket?.close() } catch (_: Exception) { } }
+
+/** Only the phone on the control connection may claim an AirPlay data socket. */
+internal fun ServerSocket.acceptFrom(expectedPeer: InetAddress, onRejected: () -> Unit): Socket {
+    var reported = false
+    while (true) {
+        val socket = accept()
+        if (socket.inetAddress == expectedPeer) return socket
+        safeClose(socket)
+        if (!reported) {
+            reported = true
+            onRejected()
+        }
+    }
+}
 
 internal fun safeClose(closeable: Closeable?) {
     try {

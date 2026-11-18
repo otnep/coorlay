@@ -3,17 +3,38 @@ package com.coorlay.airplay
 import java.net.InetAddress
 import java.net.Socket
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AirPlayIapTunnelStreamTest {
+    @Test
+    fun unrelatedPeerCannotClaimTheTunnel() {
+        val expected = InetAddress.getByName("127.0.0.1")
+        val tunnel = IapTunnel(ByteArray(32), expected, InetAddress.getByName("::"))
+        try {
+            val port = tunnel.listen(object : IapTunnel.Listener {})
+            Socket(InetAddress.getByName("::1"), port).use { other ->
+                other.soTimeout = 3000
+                assertEquals(-1, other.getInputStream().read())
+                assertFalse(tunnel.awaitPeerConnection(50))
+            }
+            Socket(expected, port).use {
+                assertTrue(tunnel.awaitPeerConnection(3000))
+            }
+        } finally {
+            tunnel.close()
+        }
+    }
+
     @Test
     fun inputConnectionCloseKeepsEventChannelAvailableForOutboundIap() {
         val sent = mutableListOf<ByteArray>()
         val session = testSession()
         val bridge = AirPlayIapTunnelStream(
             session = session,
-            tunnel = IapTunnel(ByteArray(32)),
+            tunnel = IapTunnel(ByteArray(32), InetAddress.getByName("127.0.0.1")),
             sendCommand = { data, _ ->
                 sent += data.copyOf()
                 true
@@ -41,6 +62,7 @@ class AirPlayIapTunnelStreamTest {
             session = testSession(),
             tunnel = IapTunnel(
                 readKey = ByteArray(32),
+                expectedPeer = InetAddress.getByName("::1"),
                 bindAddress = InetAddress.getByName("::"),
             ),
             sendCommand = { _, _ -> true },

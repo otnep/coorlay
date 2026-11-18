@@ -16,6 +16,8 @@ val signingProperties = (providers.environmentVariable("COORLAY_SIGNING_PROPERTI
 android {
     namespace = "com.coorlay.coolray"
     compileSdk = 37
+    // Use the legacy-core toolchain to strip native symbols when packaging the APK.
+    ndkVersion = "23.2.8568313"
     buildFeatures { buildConfig = true }
     useLibrary("android.test.runner")
     useLibrary("android.test.base")
@@ -23,8 +25,8 @@ android {
         applicationId = "com.coorlay"
         minSdk = 18
         targetSdk = 22
-        versionCode = 10
-        versionName = "1.0.4-2-debug"
+        versionCode = 11
+        versionName = "1.0.4"
         multiDexEnabled = true
         // ClusterMediaTest's relay runs in the test package's own process, which loads only the main DEX.
         multiDexKeepProguard = file("multidex-test-keep.pro")

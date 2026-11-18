@@ -93,7 +93,8 @@ class CarPlayMediaEngine(
         val key = outputKey(session, stream) ?: return null
         val streamKey = StreamKey(session, type)
         Log.i(TAG, "airplay screen key connectionID=${unsignedPlistDecimal(stream["streamConnectionID"])}")
-        val screen = ScreenStream(key, session::logDebug, videoDecryptorFactory?.invoke(key))
+        val peer = session.remoteAddress ?: return null
+        val screen = ScreenStream(key, peer, session::logDebug, videoDecryptorFactory?.invoke(key))
         sink.setVideoDiagnosticHandler(type) {
             if (it == "first frame rendered") session.videoFrameRendered()
             session.logDebug("Video: $it")
@@ -256,7 +257,9 @@ class CarPlayMediaEngine(
             "SETRATE", "SETRATEANCHORTIME" -> if (rate == null) null else buffered.setRate(rtpTime, rate, session.syncedNtp())
             "GETANCHOR" -> buffered.anchor()
             "FLUSHBUFFERED" -> {
-                (body["flushUntilTS"] as? Number)?.toLong()?.let { buffered.flush(it) }
+                val untilTimestamp = (body["flushUntilTS"] as? Number)?.toLong()
+                val untilSequence = (body["flushUntilSeq"] as? Number)?.toLong()
+                if (untilTimestamp != null || untilSequence != null) buffered.flush(untilTimestamp, untilSequence)
                 null
             }
             else -> null
@@ -285,6 +288,7 @@ class CarPlayMediaEngine(
         )
         val tunnel = IapTunnel(
             readKey = key,
+            expectedPeer = session.remoteAddress ?: return null,
             bindAddress = session.localAddress
                 ?: when (session.remoteAddress) {
                     is Inet6Address -> InetAddress.getByName("::")
@@ -345,7 +349,8 @@ class CarPlayMediaEngine(
         fun key(label: String) = AirPlayCrypto.hkdfSha512(
             shared, "DataStream-Salt$seed".toByteArray(Charsets.US_ASCII), label.toByteArray(Charsets.US_ASCII), 32,
         )
-        val channel = VideoSettingsChannel(key(DATASTREAM_OUTPUT_KEY), key(DATASTREAM_INPUT_KEY)) { session.logDebug(it) }
+        val peer = session.remoteAddress ?: return null
+        val channel = VideoSettingsChannel(key(DATASTREAM_OUTPUT_KEY), key(DATASTREAM_INPUT_KEY), peer, session::logDebug)
         val port = channel.listen(session.localAddress ?: InetAddress.getByName("::"))
         videoSettingsChannels.put(session, channel)?.close()
         return linkedMapOf<String, Any?>("type" to STREAM_TYPE_DATA, "streamID" to VIDEO_SETTINGS_STREAM_ID, "dataPort" to port)
@@ -475,7 +480,7 @@ class CarPlayMediaEngine(
         } else if (framesPerPacket > 0) {
             Math.round(framesPerPacket * 1000.0 / format.sampleRate).toInt().coerceIn(5, 60)
         } else {
-            20
+            MicrophoneConfig.pcmFrameMillis(format.sampleRate, format.channels)
         }
         val opusBitrate = when {
             formatBits and OPUS_48K != 0L -> 96_000

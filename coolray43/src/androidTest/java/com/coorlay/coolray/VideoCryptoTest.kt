@@ -46,7 +46,7 @@ class VideoCryptoTest : AndroidTestCase() {
 
     fun testNativeScreenFramesArriveOverIpv6AndAdvanceNonce() {
         val delivered = CountDownLatch(3)
-        val stream = ScreenStream(key, frameDecryptor = native())
+        val stream = ScreenStream(key, InetAddress.getByName("::1"), frameDecryptor = native())
         var peer: Socket? = null
         val frames = java.util.concurrent.CopyOnWriteArrayList<ByteArray>()
         try {

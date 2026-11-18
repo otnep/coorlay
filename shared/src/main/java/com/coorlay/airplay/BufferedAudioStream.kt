@@ -58,6 +58,8 @@ internal class BufferedAudioStream(
     // Playback state, guarded by [lock].
     private var rate = 0
     private var flushUntil: Long? = null
+    private var flushUntilSequence: Long? = null
+    private var latestAcceptedSequence = 0L
     private var anchorRtp: Long? = null
     private var anchorNtp: BigInteger? = null
     private var feedStartTimestamp: Long? = null
@@ -115,14 +117,17 @@ internal class BufferedAudioStream(
                 var pacing = false
                 synchronized(lock) {
                     while (!closed.get() &&
-                        flushUntil?.let { before(frame.timestamp, it) } != true &&
+                        !isStaleLocked(frame) &&
                         (queuedBytes + frame.rtp.size > AUDIO_BUFFER_BYTES || queue.size + fed.size >= maxBufferedFrames)) {
                         // TCP backpressure preserves music rather than dropping an arbitrary part
                         // of a track. Close, playback and flush all wake the bounded receiver.
                         lock.wait()
                     }
                     if (closed.get()) return
-                    if (flushUntil?.let { before(frame.timestamp, it) } == true) return@synchronized
+                    if (isStaleLocked(frame)) return@synchronized
+                    if (flushUntilSequence != null) {
+                        latestAcceptedSequence = maxOf(latestAcceptedSequence, unwrapSequence(frame.sequence, latestAcceptedSequence))
+                    }
                     queue.addLast(frame)
                     queuedBytes += frame.rtp.size
                     lock.notifyAll()
@@ -237,11 +242,21 @@ internal class BufferedAudioStream(
     /** GETANCHOR: the current anchor, or null before the first SETRATE. */
     fun anchor(): Map<String, Any?>? = synchronized(lock) { anchorLocked() }
 
-    /** FLUSHBUFFERED: drop what was sent before [untilTimestamp] and restart the output there. */
-    fun flush(untilTimestamp: Long?) = synchronized(lock) {
+    /** A track can restart its RTP clock at any timestamp, so prefer the continuous packet sequence. */
+    fun flush(untilTimestamp: Long?, untilSequence: Long? = null) = synchronized(lock) {
         if (closed.get()) return@synchronized
         restoreFedLocked()
-        if (untilTimestamp != null) dropBeforeLocked(untilTimestamp)
+        val sequence = untilSequence?.and(0xffffL)
+        flushUntilSequence = sequence
+        if (sequence != null) {
+            flushUntil = null
+            latestAcceptedSequence = sequence
+            while (queue.peekFirst()?.let { unwrapSequence(it.sequence, sequence) < sequence } == true) {
+                queuedBytes -= queue.removeFirst().rtp.size
+            }
+        } else if (untilTimestamp != null) {
+            dropBeforeLocked(untilTimestamp)
+        }
         restartOutputLocked()
         lock.notifyAll()
     }
@@ -281,6 +296,12 @@ internal class BufferedAudioStream(
             queuedBytes -= queue.pollFirst()!!.rtp.size
         }
         lock.notifyAll()
+    }
+
+    private fun isStaleLocked(frame: Frame): Boolean {
+        val sequence = flushUntilSequence
+        if (sequence != null) return unwrapSequence(frame.sequence, latestAcceptedSequence) < sequence
+        return flushUntil?.let { before(frame.timestamp, it) } == true
     }
 
     private fun retireFedLocked() {
@@ -393,6 +414,10 @@ internal class BufferedAudioStream(
 
         /** Whether RTP timestamp [a] comes before [b], across the 32-bit wrap. */
         internal fun before(a: Long, b: Long): Boolean = ((a - b) and U32) >= 0x8000_0000L
+
+        /** Interpret the 16-bit wire sequence nearest the most recently accepted sequence. */
+        internal fun unwrapSequence(sequence: Int, near: Long): Long =
+            near + ((sequence.toLong() - near + 0x8000L) and 0xffffL) - 0x8000L
 
         private fun u32(bytes: ByteArray, offset: Int): Long =
             ((bytes[offset].toLong() and 0xff) shl 24) or ((bytes[offset + 1].toLong() and 0xff) shl 16) or

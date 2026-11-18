@@ -36,6 +36,7 @@ fun interface ScreenFrameDecryptor {
  */
 class ScreenStream(
     private val key: ByteArray,
+    private val expectedPeer: InetAddress,
     private val onDiagnostic: (String) -> Unit = {},
     private val frameDecryptor: ScreenFrameDecryptor? = null,
 ) : Closeable {
@@ -64,7 +65,7 @@ class ScreenStream(
     private val frameCounter = AtomicLong(0)
     private val firstFrameLogged = AtomicBoolean(false)
     private var server: ServerSocket? = null
-    private var socket: Socket? = null
+    @Volatile private var socket: Socket? = null
     private var thread: Thread? = null
     /**
      * Decrypted frames travel to the decoder in these buffers and come back once MediaCodec has copied them. A new
@@ -99,8 +100,12 @@ class ScreenStream(
 
     private fun accept(bound: ServerSocket) {
         try {
-            val accepted = bound.accept()
+            val accepted = bound.acceptFrom(expectedPeer) { onDiagnostic("Video: rejected sender outside the control session") }
             socket = accepted
+            if (closed.get()) {
+                safeClose(accepted)
+                return
+            }
             run(accepted)
         } catch (error: Exception) {
             if (!closed.get()) listener.onClosed(error)
@@ -141,17 +146,18 @@ class ScreenStream(
     private fun onMessage(header: ByteArray, body: ByteArray, bodySize: Int, arrivalNanos: Long) {
         when (header[OPCODE_OFFSET].toInt() and 0xff) {
             OP_VIDEO_FRAME -> {
+                if (bodySize < ScreenCodec.TAG_SIZE) return
                 val started = System.nanoTime()
                 val payload = framePool.obtain(maxOf(bodySize - ScreenCodec.TAG_SIZE, 1))
-                val length = if (bodySize >= ScreenCodec.TAG_SIZE) {
-                    val counter = frameCounter.get()
-                    (frameDecryptor?.openInto(counter, header, body, bodySize, payload)
-                        ?: ScreenCodec.decryptFrame(key, counter, header, body.copyOf(bodySize)).also { it.copyInto(payload) }.size)
-                        .also { frameCounter.incrementAndGet() }
-                } else {
-                    body.copyInto(payload, 0, 0, bodySize)
-                    bodySize
+                val counter = frameCounter.get()
+                val length = try {
+                    frameDecryptor?.openInto(counter, header, body, bodySize, payload)
+                        ?: ScreenCodec.decryptFrame(key, counter, header, body.copyOf(bodySize)).also { it.copyInto(payload) }.size
+                } catch (error: Exception) {
+                    framePool.recycle(payload)
+                    throw error
                 }
+                frameCounter.incrementAndGet()
                 val decrypted = System.nanoTime()
                 if (firstFrameLogged.compareAndSet(false, true)) {
                     Log.i(
@@ -245,8 +251,7 @@ object ScreenCodec {
     private const val SENDER_TIME_OFFSET = 8
 
     fun decryptFrame(key: ByteArray, counter: Long, header: ByteArray, body: ByteArray): ByteArray =
-        if (body.size < TAG_SIZE) body
-        else AirPlayCrypto.chachaOpen(key, AirPlayCrypto.nonce64(counter), body, header)
+        AirPlayCrypto.chachaOpen(key, AirPlayCrypto.nonce64(counter), body, header)
 
     /**
      * Replaces each four-byte NAL length with an Annex B start code in place.

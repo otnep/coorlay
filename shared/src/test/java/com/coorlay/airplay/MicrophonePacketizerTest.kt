@@ -2,9 +2,24 @@ package com.coorlay.airplay
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MicrophonePacketizerTest {
+    @Test
+    fun defaultPcmPacketsFitTheUsbMtu() {
+        val formats = listOf(Triple(48_000, 1, 10), Triple(48_000, 2, 5), Triple(44_100, 1, 10),
+            Triple(24_000, 1, 20), Triple(16_000, 1, 20))
+        for ((sampleRate, channels, expectedMillis) in formats) {
+            val millis = MicrophoneConfig.pcmFrameMillis(sampleRate, channels)
+            assertEquals(expectedMillis, millis)
+            val samples = sampleRate * millis / 1000
+            val packet = MicrophonePacketizer.sealPacket(ByteArray(32), 100, MicrophoneCounters(),
+                ByteArray(samples * channels * 2), samples)
+            assertTrue(packet.size + 40 + 8 <= 1500)
+        }
+    }
+
     @Test
     fun packetUsesRtpHeaderAndInputKeyAad() {
         val key = ByteArray(32) { index -> (index + 1).toByte() }

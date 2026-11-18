@@ -381,6 +381,48 @@ class BufferedAudioStreamTest {
     }
 
     @Test
+    fun trackChangeDropsQueuedAndLateOldFramesDespiteTimestampJump() {
+        val oldTimestamp = 1_390_997_214L
+        val newTimestamp = 4_140_849_176L
+        val sink = RecordingSink()
+        BufferedAudioStream(key, format, sink).use { stream ->
+            stream.start()
+            Socket(InetAddress.getLoopbackAddress(), stream.port).use { socket ->
+                val out = DataOutputStream(socket.getOutputStream())
+                fun send(sequence: Int, timestamp: Long) {
+                    val body = seal(sequence, timestamp, byteArrayOf(0x21))
+                    out.writeShort(body.size + 2)
+                    out.write(body)
+                    out.flush()
+                }
+                send(65_534, oldTimestamp)
+                waitFor { queuedFrames(stream) == 1 }
+
+                stream.flush(newTimestamp, untilSequence = 65_536)
+                assertEquals(0, queuedFrames(stream))
+                send(65_535, oldTimestamp + 1024)
+                send(0, newTimestamp)
+                send(1, newTimestamp + 1024)
+                waitFor { queuedFrames(stream) == 2 }
+
+                stream.setRate(newTimestamp, 1, BigInteger.ZERO)
+                waitFor { sink.rtp.size >= 2 }
+                assertEquals(listOf(newTimestamp.toInt(), (newTimestamp + 1024).toInt()), sink.rtp.toList())
+            }
+        }
+    }
+
+    @Test
+    fun packetSequenceCanAdvancePastHalfTheWireRangeAndWrap() {
+        var sequence = 65_536L
+        for (offset in listOf(12_000, 24_000, 36_000, 48_000, 60_000, 72_000)) {
+            val extended = 65_536L + offset
+            sequence = BufferedAudioStream.unwrapSequence((extended and 0xffff).toInt(), sequence)
+            assertEquals(extended, sequence)
+        }
+    }
+
+    @Test
     fun setRateStartsPlaybackFromItsTimeAndPausesAndFlushesStopTheOutput() {
         val sink = RecordingSink()
         val stream = BufferedAudioStream(key, format, sink)

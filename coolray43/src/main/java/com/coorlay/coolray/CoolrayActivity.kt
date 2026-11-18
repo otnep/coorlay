@@ -1191,8 +1191,10 @@ class CoolrayActivity : Activity(), SurfaceHolder.Callback {
                     wirelessBluetoothDeviceAddress = if (wireless) sessionPhone ?: prefs.getString(CHOSEN_PHONE, null) else null,
                     wirelessBluetoothPreferredAddress = sessionPreferredPhone ?: prefs.getString(LAST_PHONE, null),
                     wiredUsbConfiguration = null,
+                    availableCurrentMilliAmps = if (prefs.getBoolean(USB_CHARGING_LIMIT, defaultUsbChargingLimit())) 1000 else 2400,
                     detailedTransportLogs = detailedLogs)
-                if (!wireless) log("USB configuration preference=${runtime.wiredUsbConfiguration ?: "auto"}", display = false)
+                if (!wireless) log("USB configuration preference=${runtime.wiredUsbConfiguration ?: "auto"}; " +
+                    "advertised current=${runtime.availableCurrentMilliAmps} mA", display = false)
                 val mediaSink = AndroidMediaSink(this, size.width, size.height, report = { log(it) },
                     onVideoActive = { runOnUiThread { if (generation == run && !destroyed) {
                         if (wireless && !videoActive) handler.postDelayed({ if (generation == run && !destroyed) bluetoothOffForCarPlay(run, 1) }, BT_OFF_DELAY_MS)
