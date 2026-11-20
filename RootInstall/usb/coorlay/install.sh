@@ -26,7 +26,7 @@
 # Visible result: while it works the Android "About" screen is open; at the end coorlay opens on success,
 # the "About" screen stays on failure. Everything is written to coorlay/logs/install-<date>.log on the stick.
 
-VERSION=8
+VERSION=9
 usb="$1"
 dir="$usb/coorlay"
 PKG=com.coorlay
@@ -44,13 +44,14 @@ SOCKETS_DIR=/data/misc/wifi/sockets
 P2P_SOCKET=$SOCKETS_DIR/p2p0
 # Android 4.3 scans with the Wi-Fi client every this many ms while a Wi-Fi Direct group is up (default 60000). Each
 # scan took the radio off the CarPlay channel for about 2 s: wlan0 link change and a picture/music stall every
-# 60 s in coorlay's Wi-Fi Direct sessions (2026-10-12). v5 sets one hour; RESTORE puts the default 60000 back (4.3 "settings" has no delete).
+# 60 s in coorlay's Wi-Fi Direct sessions (2026-10-12). Save the original value before setting one hour.
 P2P_SCAN_SETTING=wifi_scan_interval_p2p_connected_ms
 P2P_SCAN_INTERVAL=3600000
 # Where wpa_supplicant really opens the p2p0 control socket with the stock file.
 P2P_REAL=/data/system/wpa_supplicant/p2p0
 # Read by coorlay (no root): a new value makes it check Wi-Fi Direct silently and pick it as the default when it works.
 P2P_MARKER=/data/local/tmp/coorlay-wifi-direct
+P2P_STATE=/data/system/coorlay-wifi-direct.state
 FEATURE_XML=/system/etc/permissions/android.hardware.wifi.direct.xml
 # Written into the feature file coorlay adds; RESTORE removes the file only when it carries this text.
 FEATURE_TAG="added by the coorlay root installer"
@@ -62,6 +63,7 @@ RESTORE_WIFI_DIRECT=0
 # v7: the H50 firmware 05.07.06000 has no android.hardware.wifi.direct.xml, so Android never starts Wi-Fi Direct and
 # the link alone cannot help. Opt-in, only on the separate "wifi-direct-enable" stick.
 ENABLE_WIFI_DIRECT_FEATURE=0
+H50_ONLY=0
 DUMP_SYSTEM_APPS=0
 RUN_ONCE=1
 # v6: copies of the stock phone and key-handling apps (and the framework they were optimized against) go to
@@ -89,6 +91,7 @@ if [ -f "$dir/install.conf" ]; then
 			FIX_WIFI_DIRECT=[01]) FIX_WIFI_DIRECT=$value ;;
 			RESTORE_WIFI_DIRECT=[01]) RESTORE_WIFI_DIRECT=$value ;;
 			ENABLE_WIFI_DIRECT_FEATURE=[01]) ENABLE_WIFI_DIRECT_FEATURE=$value ;;
+			H50_ONLY=[01]) H50_ONLY=$value ;;
 			DUMP_SYSTEM_APPS=[01]) DUMP_SYSTEM_APPS=$value ;;
 			RUN_ONCE=[01]) RUN_ONCE=$value ;;
 			ANY_HEAD_UNIT=[01]) ANY_HEAD_UNIT=$value ;;
@@ -108,10 +111,17 @@ say "head unit: manufacturer=$(getprop ro.product.manufacturer) model=$(getprop 
 	"board=$(getprop ro.product.board) android=$(getprop ro.build.version.release) firmware=$(getprop ro.build.id)" \
 	"device=$(getprop ro.product.device)"
 say "settings: INSTALL_APP=$INSTALL_APP FIX_WIFI_DIRECT=$FIX_WIFI_DIRECT RESTORE_WIFI_DIRECT=$RESTORE_WIFI_DIRECT" \
-	"ENABLE_WIFI_DIRECT_FEATURE=$ENABLE_WIFI_DIRECT_FEATURE DUMP_SYSTEM_APPS=$DUMP_SYSTEM_APPS RUN_ONCE=$RUN_ONCE ANY_HEAD_UNIT=$ANY_HEAD_UNIT"
+	"ENABLE_WIFI_DIRECT_FEATURE=$ENABLE_WIFI_DIRECT_FEATURE H50_ONLY=$H50_ONLY DUMP_SYSTEM_APPS=$DUMP_SYSTEM_APPS RUN_ONCE=$RUN_ONCE ANY_HEAD_UNIT=$ANY_HEAD_UNIT"
 
+head_unit="$(getprop ro.product.manufacturer)|$(getprop ro.product.model)|$(getprop ro.product.board)|$(getprop ro.build.version.release)|$(getprop ro.build.id)"
+if [ "$H50_ONLY" = 1 ]; then
+	case "$head_unit|$(getprop ro.product.device)" in
+		'Neusoft|GEELY|C3ALFUS|4.3|05.07.06000.H50.00032|SX11QJ') ;;
+		*) say "STOP: this stick is only for the stock SX11QJ on 05.07.06000.H50.00032; no settings changed"; exit 1 ;;
+	esac
+fi
 coolray=0
-case "$(getprop ro.product.manufacturer)|$(getprop ro.product.model)|$(getprop ro.product.board)|$(getprop ro.build.version.release)|$(getprop ro.build.id)" in
+case "$head_unit" in
 	Neusoft\|GEELY\|C3ALFUS\|4.3\|05.05.*|Neusoft\|GEELY\|C3ALFUS\|4.3\|05.06.*|Neusoft\|GEELY\|C3ALFUS\|4.3\|05.07.*) coolray=1 ;;
 esac
 if [ $coolray = 0 ] && [ "$ANY_HEAD_UNIT" = 1 ]; then say "TEST: not a Coolray, continuing because ANY_HEAD_UNIT=1"; coolray=1; fi
@@ -289,6 +299,7 @@ supplicant_running() {
 }
 wifi_was_on=0
 stop_wifi() {
+	wifi_was_on=0
 	supplicant_running || return 0
 	wifi_was_on=1
 	say "Wi-Fi Direct: stopping Wi-Fi while the file changes"
@@ -313,47 +324,57 @@ fix_wifi_direct() {
 			"The coorlay-usb-wifi-direct-enable stick can add the file. Not changed"
 		return 1
 	fi
+	typeset template current undo=0 status=0
 	template=$(ctrl_value $P2P_TEMPLATE 2>/dev/null)
 	if ! stock_ctrl "$template"; then
 		say "Wi-Fi Direct: template ctrl_interface is '$template', not the known stock bug; not changed"; return 1
 	fi
-	undo=0
 	if [ -f $P2P_CONF ]; then
 		current=$(ctrl_value $P2P_CONF)
 		if [ "$current" = "$P2P_CTRL" ]; then
+			if [ ! -f "$P2P_BACKUP" ] && [ ! -f "$P2P_ABSENT" ]; then
+				say "Wi-Fi Direct: modified p2p_supplicant.conf without a coorlay backup; not changed"
+				return 1
+			fi
 			say "Wi-Fi Direct: p2p_supplicant.conf carries the v3 change that broke Wi-Fi; it is put back"; undo=1
 		elif [ "$current" != "$template" ]; then
 			say "Wi-Fi Direct: p2p_supplicant.conf has ctrl_interface '$current' (changed by someone else); not changed"; return 1
 		fi
 	fi
 	stop_wifi || { start_wifi; return 1; }
-	result=0
-	if [ $undo = 1 ]; then restore_conf || result=1; fi
-	if [ $result = 0 ]; then repair_sockets_dir; make_link || result=1; fi
-	start_wifi
-	[ $result = 0 ] || return 1
-	set_p2p_scan_interval
+	if [ "$undo" = 1 ]; then repair_sockets_dir && restore_conf || status=1; fi
+	if [ "$status" = 0 ]; then prepare_p2p_state && make_link && set_p2p_scan_interval || status=1; fi
+	if ! start_wifi; then say "Wi-Fi Direct: could not start Wi-Fi again"; status=1; fi
+	[ "$status" = 0 ] || return 1
 	await_socket
 	mark_wifi_direct
-	return 0
 }
 
 # v3's ctrl_interface made wpa_supplicant chmod the directory to 0750; Android's init.rc makes it 0770 wifi:wifi.
 repair_sockets_dir() {
-	chown wifi:wifi $SOCKETS_DIR
-	chmod 770 $SOCKETS_DIR
+	if ! chown wifi:wifi "$SOCKETS_DIR" || ! chmod 770 "$SOCKETS_DIR"; then
+		say "Wi-Fi Direct: could not restore permissions for $SOCKETS_DIR"
+		return 1
+	fi
 	say "Wi-Fi Direct: $(ls -ld $SOCKETS_DIR 2>&1)"
 }
 
+is_p2p_link() {
+	# Android 4.3 toolbox has no readlink.
+	[ -L "$P2P_SOCKET" ] || return 1
+	case "$(ls -ld "$P2P_SOCKET" 2>/dev/null)" in *" -> $P2P_REAL") return 0 ;; *) return 1 ;; esac
+}
+
 make_link() {
-	# No readlink in the 4.3 toolbox: "ls -l" prints "... p2p0 -> target" for a link.
-	if [ -L $P2P_SOCKET ] && case "$(ls -l $P2P_SOCKET 2>/dev/null)" in *"-> $P2P_REAL") true ;; *) false ;; esac; then
-		say "Wi-Fi Direct: link already there: $(ls -l $P2P_SOCKET 2>&1)"; return 0
+	is_p2p_link && { say "Wi-Fi Direct: matching link already there"; return 0; }
+	if [ "$saved_link" != create ] || [ -e "$P2P_SOCKET" ] || [ -L "$P2P_SOCKET" ]; then
+		say "Wi-Fi Direct: $P2P_SOCKET changed; left in place"
+		return 1
 	fi
-	# A socket file left by v3's supplicant (stopped now) or an older link.
-	if [ -e $P2P_SOCKET ] || [ -L $P2P_SOCKET ]; then say "Wi-Fi Direct: removing old $(ls -l $P2P_SOCKET 2>&1)"; rm $P2P_SOCKET; fi
-	if ! ln -s $P2P_REAL $P2P_SOCKET; then say "Wi-Fi Direct: ln -s failed; not changed"; return 1; fi
-	if [ ! -L $P2P_SOCKET ]; then say "Wi-Fi Direct: the link did not appear; not changed"; return 1; fi
+	if ! ln -s "$P2P_REAL" "$P2P_SOCKET" || ! is_p2p_link; then
+		say "Wi-Fi Direct: could not create the socket link"
+		return 1
+	fi
 	sync
 	say "Wi-Fi Direct: link made: $(ls -l $P2P_SOCKET 2>&1)"
 	return 0
@@ -365,13 +386,16 @@ restore_conf() {
 		ownership=$(owner_group $P2P_BACKUP)
 		new=$P2P_CONF.coorlay-new
 		if cat $P2P_BACKUP > $new && chown $ownership $new && chmod 660 $new && mv $new $P2P_CONF; then
-			rm $P2P_BACKUP
+			rm "$P2P_BACKUP" || return 1
 			say "Wi-Fi Direct: original p2p_supplicant.conf restored: $(ctrl_value $P2P_CONF)"
 		else
 			rm $new 2>/dev/null; say "Wi-Fi Direct: restoring p2p_supplicant.conf failed"; return 1
 		fi
 	elif [ -f $P2P_ABSENT ]; then
-		rm $P2P_CONF $P2P_ABSENT
+		if ! rm "$P2P_CONF" || ! rm "$P2P_ABSENT"; then
+			say "Wi-Fi Direct: could not remove the v3 configuration or its marker"
+			return 1
+		fi
 		say "Wi-Fi Direct: p2p_supplicant.conf removed (it did not exist before); Android creates it again"
 	else
 		say "Wi-Fi Direct: no backup of the original p2p_supplicant.conf; not restored"; return 1
@@ -393,21 +417,119 @@ await_socket() {
 	logcat -v time -t 12 -s WifiHW:E WifiP2pService:E WifiStateMachine:E 2>&1
 }
 
-# Only the global setting is written (no file in /system); Android reads it when a Wi-Fi Direct group connects.
-set_p2p_scan_interval() {
-	if settings put global $P2P_SCAN_SETTING $P2P_SCAN_INTERVAL; then
-		say "Wi-Fi Direct: $P2P_SCAN_SETTING=$(settings get global $P2P_SCAN_SETTING 2>&1) (Wi-Fi client scans during Wi-Fi Direct)"
-	else
-		say "Wi-Fi Direct: could not set $P2P_SCAN_SETTING (scans every 60 s stay)"
+valid_p2p_interval() {
+	case "$1" in null) return 0 ;; ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac
+}
+
+read_p2p_interval() {
+	typeset value row
+	value=$(settings get global "$P2P_SCAN_SETTING" 2>&1) && valid_p2p_interval "$value" || return 1
+	if [ "$value" = null ]; then
+		# settings get prints "null" even for a stored value with that spelling.
+		row=$(content query --uri content://settings/global --projection value --where "name='$P2P_SCAN_SETTING'" 2>&1) ||
+			return 1
+		[ "$row" = "No result found." ] || return 1
 	fi
+	print -r -- "$value"
+}
+
+load_p2p_state() {
+	typeset extra
+	if [ -f "$P2P_STATE" ] && [ ! -L "$P2P_STATE" ] &&
+		IFS=' ' read -r saved_link saved_interval extra < "$P2P_STATE" &&
+		{ [ "$saved_link" = create ] || [ "$saved_link" = keep ]; } &&
+		[ -z "$extra" ] && valid_p2p_interval "$saved_interval"; then
+		return 0
+	fi
+	say "Wi-Fi Direct: cannot read saved state; socket and scan interval left as they are"
+	return 1
+}
+
+# Record intent before making a change, so a failed or interrupted run can be retried or undone.
+prepare_p2p_state() {
+	if [ -e "$P2P_STATE" ] || [ -L "$P2P_STATE" ]; then load_p2p_state; return; fi
+	if is_p2p_link; then
+		saved_link=keep
+	elif [ -e "$P2P_SOCKET" ] || [ -L "$P2P_SOCKET" ]; then
+		say "Wi-Fi Direct: another file or link occupies $P2P_SOCKET; left in place"
+		return 1
+	else
+		saved_link=create
+	fi
+	if ! saved_interval=$(read_p2p_interval); then
+		say "Wi-Fi Direct: could not read the original $P2P_SCAN_SETTING"
+		return 1
+	fi
+	typeset new=$P2P_STATE.$$
+	if ! (umask 077; set -C; print -r -- "$saved_link $saved_interval" > "$new"); then
+		say "Wi-Fi Direct: could not save the original state"
+		return 1
+	fi
+	if ! mv "$new" "$P2P_STATE"; then
+		rm "$new"
+		say "Wi-Fi Direct: could not commit the saved state"
+		return 1
+	fi
+	sync
+}
+
+set_p2p_scan_interval() {
+	typeset current
+	current=$(read_p2p_interval) || { say "Wi-Fi Direct: could not read $P2P_SCAN_SETTING"; return 1; }
+	[ "$current" = "$P2P_SCAN_INTERVAL" ] && return 0
+	if [ "$current" != "$saved_interval" ]; then
+		say "Wi-Fi Direct: $P2P_SCAN_SETTING changed since it was saved; left as it is"
+		return 0
+	fi
+	if ! settings put global "$P2P_SCAN_SETTING" "$P2P_SCAN_INTERVAL" ||
+		[ "$(read_p2p_interval)" != "$P2P_SCAN_INTERVAL" ]; then
+		say "Wi-Fi Direct: could not set $P2P_SCAN_SETTING; saved state retained"
+		return 1
+	fi
+	say "Wi-Fi Direct: $P2P_SCAN_SETTING set to $P2P_SCAN_INTERVAL"
+}
+
+restore_p2p_scan_interval() {
+	typeset current
+	current=$(read_p2p_interval) || { say "Wi-Fi Direct: could not read $P2P_SCAN_SETTING"; return 1; }
+	[ "$current" = "$saved_interval" ] && return 0
+	if [ "$current" != "$P2P_SCAN_INTERVAL" ]; then
+		say "Wi-Fi Direct: $P2P_SCAN_SETTING changed since installation; left as it is"
+		return 0
+	fi
+	if [ "$saved_interval" = null ]; then
+		# The settings command on Android 4.3 supports get/put only.
+		content delete --uri content://settings/global --where "name='$P2P_SCAN_SETTING'" || return 1
+	else
+		settings put global "$P2P_SCAN_SETTING" "$saved_interval" || return 1
+	fi
+	[ "$(read_p2p_interval)" = "$saved_interval" ] || return 1
+	say "Wi-Fi Direct: original $P2P_SCAN_SETTING restored ($saved_interval)"
 }
 
 mark_wifi_direct() {
-	if [ -e $P2P_REAL ]; then socket=ok; else socket=pending; fi
-	if feature_ours; then feature=coorlay; else feature=firmware; fi
-	print -r -- "fixed=$(date +%Y%m%d-%H%M%S) installer=$VERSION method=link socket=$socket feature=$feature" > $P2P_MARKER
-	chmod 644 $P2P_MARKER
-	say "Wi-Fi Direct: marker for coorlay: $(cat $P2P_MARKER)"
+	typeset socket=pending feature=firmware new=$P2P_STATE.marker.$$
+	if { [ -e "$P2P_MARKER" ] || [ -L "$P2P_MARKER" ]; } && ! has_p2p_marker; then
+		say "Wi-Fi Direct: unrecognized coorlay marker; left in place"
+		return 1
+	fi
+	if [ -e "$P2P_REAL" ]; then socket=ok; fi
+	if feature_ours; then feature=coorlay; fi
+	if ! (set -C; print -r -- "fixed=$(date +%Y%m%d-%H%M%S) installer=$VERSION method=link socket=$socket feature=$feature" > "$new"); then
+		say "Wi-Fi Direct: could not write the coorlay marker"
+		return 1
+	fi
+	if ! chmod 644 "$new" || ! mv "$new" "$P2P_MARKER"; then
+		rm "$new"
+		say "Wi-Fi Direct: could not install the coorlay marker"
+		return 1
+	fi
+	say "Wi-Fi Direct: marker for coorlay: $(cat "$P2P_MARKER")"
+}
+
+has_p2p_marker() {
+	[ -f "$P2P_MARKER" ] && [ ! -L "$P2P_MARKER" ] || return 1
+	case "$(cat "$P2P_MARKER")" in fixed=*' installer='*' method=link socket='*) return 0 ;; *) return 1 ;; esac
 }
 
 # Android 4.3 starts Wi-Fi Direct (WifiP2pService and the p2p_supplicant service instead of wpa_supplicant) only on a
@@ -474,18 +596,48 @@ remove_wifi_direct_feature() {
 }
 feature_removed=0
 
-# Only coorlay's own changes are undone: the link, and v3's file if it is still there.
+# Undo only recorded changes and the v3 configuration with its old backup.
 restore_wifi_direct() {
-	rm $P2P_MARKER 2>/dev/null
-	stop_wifi || { start_wifi; return 1; }
-	result=0
-	if [ -L $P2P_SOCKET ]; then rm $P2P_SOCKET && say "Wi-Fi Direct: link removed"; else say "Wi-Fi Direct: no link"; fi
-	if [ -f $P2P_CONF ] && [ "$(ctrl_value $P2P_CONF)" = "$P2P_CTRL" ]; then restore_conf || result=1; fi
-	repair_sockets_dir
-	settings put global $P2P_SCAN_SETTING 60000 && say "Wi-Fi Direct: $P2P_SCAN_SETTING back to the firmware default 60000"
+	typeset recorded=0 remove_link=0 undo_v3=0 status=0
+	if [ -e "$P2P_STATE" ] || [ -L "$P2P_STATE" ]; then
+		load_p2p_state || return 1
+		recorded=1
+		if [ "$saved_link" = create ]; then
+			if is_p2p_link; then remove_link=1
+			elif [ -e "$P2P_SOCKET" ] || [ -L "$P2P_SOCKET" ]; then
+				say "Wi-Fi Direct: socket path changed since installation; left in place"
+			fi
+		fi
+	elif has_p2p_marker; then
+		say "Wi-Fi Direct: no saved socket or scan interval from the old installer; both left as they are"
+	fi
+	if { [ -f "$P2P_BACKUP" ] || [ -f "$P2P_ABSENT" ]; } &&
+		[ -f "$P2P_CONF" ] && [ "$(ctrl_value "$P2P_CONF")" = "$P2P_CTRL" ]; then
+		undo_v3=1
+	fi
+	if [ "$remove_link" = 1 ] || [ "$undo_v3" = 1 ]; then
+		stop_wifi || { start_wifi; return 1; }
+		if [ "$remove_link" = 1 ] && is_p2p_link; then
+			if rm "$P2P_SOCKET"; then say "Wi-Fi Direct: coorlay link removed"
+			else say "Wi-Fi Direct: could not remove the coorlay link"; status=1; fi
+		fi
+		if [ "$undo_v3" = 1 ]; then repair_sockets_dir && restore_conf || status=1; fi
+		if ! start_wifi; then say "Wi-Fi Direct: could not start Wi-Fi again"; status=1; fi
+	fi
+	if [ "$recorded" = 1 ] && ! restore_p2p_scan_interval; then
+		say "Wi-Fi Direct: could not restore $P2P_SCAN_SETTING; saved state retained"
+		status=1
+	fi
+	[ "$status" = 0 ] || return 1
+	if has_p2p_marker && ! rm "$P2P_MARKER"; then
+		say "Wi-Fi Direct: could not remove the coorlay marker"
+		return 1
+	fi
+	if [ "$recorded" = 1 ] && ! rm "$P2P_STATE"; then
+		say "Wi-Fi Direct: could not clear the saved state"
+		return 1
+	fi
 	sync
-	start_wifi
-	return $result
 }
 
 # No cp in the 4.3 toolbox: files are copied with cat. The listing keeps sizes and dates, which cat does not.
@@ -554,31 +706,47 @@ wifi_hardware_info
 
 if [ "$DUMP_SYSTEM_APPS" = 1 ]; then dump_system_apps || failed=1; fi
 
-if [ "$FIX_WIFI_DIRECT" = 1 ] || [ "$RESTORE_WIFI_DIRECT" = 1 ] || [ "$ENABLE_WIFI_DIRECT_FEATURE" = 1 ]; then
+apk_failed=0
+if [ "$INSTALL_APP" = 1 ]; then
+	if install_app; then say "APK result: OK"
+	else say "APK result: FAILED"; apk_failed=1; failed=1; fi
+else
+	say "APK result: SKIPPED"
+fi
+
+run_wifi_direct() {
+	typeset wifi_failed=0
 	wifi_direct_state before
 	if [ "$RESTORE_WIFI_DIRECT" = 1 ]; then
-		restore_wifi_direct || failed=1
+		restore_wifi_direct || wifi_failed=1
 		if remove_wifi_direct_feature; then
-			if [ ! -f "$FEATURE_XML" ]; then h50_restore_supplicant || failed=1
+			if [ ! -f "$FEATURE_XML" ]; then h50_restore_supplicant || wifi_failed=1
 			elif [ -e "$H50_BACKUP" ]; then say "H50 Wi-Fi Direct: keeping the compatible supplicant while Wi-Fi Direct remains declared"; fi
 		else
-			failed=1
+			wifi_failed=1
 		fi
 	elif [ "$ENABLE_WIFI_DIRECT_FEATURE" = 1 ] && ! enable_wifi_direct_feature; then
-		failed=1
+		wifi_failed=1
 		if [ "$h50_supplicant_changed" = 1 ] && [ ! -f "$FEATURE_XML" ]; then h50_restore_supplicant; fi
 	else
 		if [ "$FIX_WIFI_DIRECT" = 1 ] && ! fix_wifi_direct; then
-			failed=1
+			wifi_failed=1
 			if [ "$feature_added" = 1 ] && remove_wifi_direct_feature && [ "$h50_supplicant_changed" = 1 ]; then
 				h50_restore_supplicant
 			fi
 		fi
 	fi
 	wifi_direct_state after
-fi
+	return "$wifi_failed"
+}
 
-if [ "$INSTALL_APP" = 1 ]; then install_app || failed=1; fi
+if [ "$FIX_WIFI_DIRECT" = 1 ] || [ "$RESTORE_WIFI_DIRECT" = 1 ] || [ "$ENABLE_WIFI_DIRECT_FEATURE" = 1 ]; then
+	if [ "$apk_failed" = 1 ]; then say "Wi-Fi Direct result: SKIPPED (APK installation failed)"
+	elif run_wifi_direct; then say "Wi-Fi Direct result: OK"
+	else say "Wi-Fi Direct result: FAILED"; failed=1; fi
+else
+	say "Wi-Fi Direct result: SKIPPED"
+fi
 
 if [ "$RUN_ONCE" = 1 ] && [ -d "$usb/$ENTRY_DIR" ]; then
 	rm -rf "$usb/_$ENTRY_DIR"
@@ -599,3 +767,4 @@ else
 	say "DONE WITH ERRORS: see the lines above"
 fi
 sync
+exit "$failed"

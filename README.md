@@ -4,7 +4,7 @@
 
 coorlay добавляет CarPlay по USB и Wi-Fi на штатную магнитолу Geely Coolray SX11 с Android 4.3. Это экспериментальный проект.
 
-[Скачать coorlay 1.0.4](https://github.com/otnep/coorlay/releases/tag/v1.0.4) · [Установка с флешки](https://github.com/otnep/coorlay/blob/main/RootInstall/ROOT-INSTALL.md)
+[Скачать coorlay 1.0.4](https://github.com/otnep/coorlay/releases/tag/v1.0.4) · [Стартовый ZIP с APK и инструкцией](https://github.com/otnep/coorlay/releases/download/v1.0.4-usb-v9/coorlay-1.0.4-START.zip) · [Пошаговая установка для H30, H40 и H50](RootInstall/ROOT-INSTALL.md)
 
 ## Совместимость
 
@@ -18,9 +18,11 @@ coorlay добавляет CarPlay по USB и Wi-Fi на штатную маг�
 
 ## Установка и подключение
 
-**При переходе на 1.0.4** удалите предыдущую официальную версию coorlay перед установкой.
+Сначала найдите H30, H40 или H50 в полной строке версии ПО магнитолы. На H30 начните с USB. На H40 можно попробовать APK, совместимость ещё предстоит проверить. На H50 начните с точки доступа магнитолы и выключите Wi-Fi Direct в coorlay.
 
-1. Скачайте APK из выпуска и установите его через файловый менеджер магнитолы. Для установки с флешки в выпуске есть отдельный архив. [Файлы выпуска](https://github.com/otnep/coorlay/releases/tag/v1.0.4) · [Инструкция по установке с флешки](https://github.com/otnep/coorlay/blob/main/RootInstall/ROOT-INSTALL.md)
+**При переходе на 1.0.4** сохраните нужные настройки перед удалением предыдущей официальной версии coorlay. Из-за смены подписи приложения настройки и сопряжения потребуется создать заново.
+
+1. Скачайте APK из выпуска и установите его через штатный файловый менеджер магнитолы. [Файлы выпуска](https://github.com/otnep/coorlay/releases/tag/v1.0.4) · [Пошаговая инструкция](RootInstall/ROOT-INSTALL.md)
 2. **По USB.** Подключите iPhone кабелем и выберите «Подключение по USB» в coorlay.
 3. **По Wi-Fi.** Сопрягите iPhone с магнитолой в штатном меню Bluetooth и выберите «Беспроводное подключение» в coorlay. Чтобы использовать точку доступа магнитолы, выключите Wi-Fi Direct в разделе «Настройки → Подключение».
 
