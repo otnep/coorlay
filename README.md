@@ -4,15 +4,15 @@
 
 coorlay добавляет CarPlay по USB и Wi-Fi на штатную магнитолу Geely Coolray SX11 с Android 4.3. Это экспериментальный проект.
 
-[Скачать coorlay 1.0.4](https://github.com/otnep/coorlay/releases/tag/v1.0.4) · [Стартовый ZIP с APK и инструкцией](https://github.com/otnep/coorlay/releases/download/v1.0.4-usb-v9/coorlay-1.0.4-START.zip) · [Пошаговая установка для H30, H40 и H50](RootInstall/ROOT-INSTALL.md)
+[Скачать coorlay 1.0.4](https://github.com/otnep/coorlay/releases/tag/v1.0.4) · [Пошаговая установка для H30, H40 и H50](RootInstall/ROOT-INSTALL.md)
 
 ## Совместимость
 
 | Версия | Что проверено |
 | --- | --- |
-| **H30** | CarPlay по USB и Wi-Fi работает на проверенных магнитолах. |
+| **H30** | CarPlay по USB и Wi-Fi работает на проверенных магнитолах. [Исправление Wi-Fi Direct](RootInstall/H30-WIFI-DIRECT.md) |
 | **H40** | Пока не тестировали. |
-| **H50** | Есть проблемы с USB и беспроводным подключением. Исправление Wi-Fi Direct v8 для `05.07.06000.H50.00032` ещё предстоит проверить на магнитоле с iPhone. [Отчёт и обсуждение](https://github.com/otnep/coorlay/issues/2) |
+| **H50** | Есть проблемы с USB и беспроводным подключением. Экспериментальное исправление Wi-Fi Direct v9 для `05.07.06000.H50.00032` ещё предстоит проверить на магнитоле с iPhone. [Отдельный выпуск для H50](https://github.com/otnep/coorlay/releases/tag/v1.0.4-h50-wifi-direct-v9) |
 
 Приложение рассчитано на штатную магнитолу Neusoft / GKUI с платой `C3ALFUS`, Android 4.3 (API 18, `armeabi-v7a`) и экраном 1920×640 при 160 dpi.
 

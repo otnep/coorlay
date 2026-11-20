@@ -4,23 +4,25 @@
 
 coorlay adds wired and wireless CarPlay to the factory head unit of the Geely Coolray SX11 running Android 4.3. It is an experimental project.
 
-[Download coorlay 1.0.4](https://github.com/otnep/coorlay/releases/tag/v1.0.4) · [Install from a USB drive (Russian)](https://github.com/otnep/coorlay/blob/main/RootInstall/ROOT-INSTALL.md)
+[Download coorlay 1.0.4](https://github.com/otnep/coorlay/releases/tag/v1.0.4) · [Step-by-step setup for H30, H40 and H50](RootInstall/ROOT-INSTALL.en.md)
 
 ## Compatibility
 
 | Version | Test status |
 | --- | --- |
-| **H30** | CarPlay works over USB and Wi-Fi on the units tested. |
+| **H30** | CarPlay works over USB and Wi-Fi on the units tested. [Wi-Fi Direct fix](RootInstall/H30-WIFI-DIRECT.md#english) |
 | **H40** | Untested. |
-| **H50** | There are known issues with USB and wireless connections. The v8 Wi-Fi Direct fix for `05.07.06000.H50.00032` still needs to be tested with an iPhone on the head unit. [Issue report and discussion](https://github.com/otnep/coorlay/issues/2) |
+| **H50** | There are known issues with USB and wireless connections. The experimental v9 Wi-Fi Direct fix for `05.07.06000.H50.00032` still needs an on-device test with an iPhone. [Separate H50 release](https://github.com/otnep/coorlay/releases/tag/v1.0.4-h50-wifi-direct-v9) |
 
 The app is designed for the factory Neusoft / GKUI head unit with a `C3ALFUS` board, Android 4.3 (API 18, `armeabi-v7a`), and a 1920×640 screen at 160 dpi.
 
 ## Installation and connection
 
-**If you are upgrading to 1.0.4**, uninstall the previous official version of coorlay before installing the update.
+Check the full head unit software version for H30, H40, or H50. Start with USB on H30. H40 compatibility is unconfirmed, but you can try the APK. On H50, turn off Wi-Fi Direct in coorlay and start with the head unit's hotspot.
 
-1. Download the APK from the release and install it using the head unit's file manager. A separate archive is available for installation from a USB drive. [Release files](https://github.com/otnep/coorlay/releases/tag/v1.0.4) · [USB installation guide (Russian)](https://github.com/otnep/coorlay/blob/main/RootInstall/ROOT-INSTALL.md)
+**If you are upgrading to 1.0.4**, save your settings before uninstalling the previous official version of coorlay. The APK signing key changed, so you will need to set up the app and pair your iPhone again.
+
+1. Download the APK from the release and install it using the head unit's built-in file manager. [Release files](https://github.com/otnep/coorlay/releases/tag/v1.0.4) · [Step-by-step instructions](RootInstall/ROOT-INSTALL.en.md)
 2. **Over USB.** Connect your iPhone with a cable and select “USB connection” in coorlay.
 3. **Over Wi-Fi.** Pair your iPhone with the head unit in its built-in Bluetooth menu, then select “Wireless connection” in coorlay. To use the head unit's Wi-Fi hotspot, turn off Wi-Fi Direct under Settings → Connection.
 
